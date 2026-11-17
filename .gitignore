@@ -1,0 +1,43 @@
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Материалы организаторов: часто под NDA и тяжёлые. Выжимка в docs/00-brief.md.
+# Если всё публичное и лёгкое, удали эти строки.
+brief/*
+!brief/README.md
+!brief/links.md
+docs/brief-text/
+
+# Данные, модели, видео
+data/raw/
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+pitch/*.mp4
+pitch/*.mov
+
+# Зависимости и сборка
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+dist/
+build/
+.next/
+.vercel/
+
+# Системное
+.DS_Store
+.idea/
+.vscode/
+*.log
+# Конфиги агентов, промпты и правила коммитим: жюри оценивает их (критерий «Масштаб использования нейротехнологий»).
+# Локальными остаются только личные настройки.
+.claude/settings.local.json
