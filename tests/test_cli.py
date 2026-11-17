@@ -183,3 +183,16 @@ class ResearchPlan(TempRepoCase):
         k, n = estimate.calibration(self.tmp)  # задача уже на этапе validation — исследование завершено
         self.assertEqual(n, 1)
         self.assertAlmostEqual(k, 2.0, places=2)
+
+
+class ProjectCliAudit(TempRepoCase):
+    def test_use_rejects_paths(self):
+        self.assertEqual(run(project.main, ["use", "../x"])[0], 2)
+        self.assertEqual(run(project.main, ["use", "projects/demo"])[0], 2)
+        self.assertEqual((self.tmp / "projects" / ".active").read_text().strip(), "demo")
+
+    def test_stage_with_unknown_previous_stage(self):
+        t = json.loads((self.proj / "state" / "task.json").read_text(encoding="utf-8"))
+        t["stage"] = "что-то странное"
+        (self.proj / "state" / "task.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(run(project.main, ["stage", "research"])[0], 0)

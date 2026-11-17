@@ -61,8 +61,8 @@ def cmd_new(args) -> int:
 
 def cmd_use(args) -> int:
     root = core.repo_root()
-    if not (core.projects_dir(root) / args.slug / "state").is_dir():
-        print(f"Нет задачи {args.slug}", file=sys.stderr)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9\-]{1,60}", args.slug) or not (core.projects_dir(root) / args.slug / "state").is_dir():
+        print(f"Нет задачи {args.slug} (slug: латиница, цифры и дефисы; список — project.py list)", file=sys.stderr)
         return 2
     (core.projects_dir(root) / ".active").write_text(args.slug + "\n", encoding="utf-8")
     print(f"Активная задача: {args.slug}")
@@ -177,7 +177,8 @@ def cmd_stage(args) -> int:
     t = core.load_task(proj)
     prev = t.get("stage")
     done = t.setdefault("stages_done", [])
-    if prev and prev != args.stage and prev not in done and core.STAGES.index(args.stage) > core.STAGES.index(prev):
+    if prev and prev in core.STAGES and prev != args.stage and prev not in done \
+            and core.STAGES.index(args.stage) > core.STAGES.index(prev):
         done.append(prev)
     t["stage"] = args.stage
     t["next_step"] = args.next or NEXT_HINT[args.stage]
