@@ -2,12 +2,12 @@
 name: intake
 description: Этап 1 — постановка задачи руководителя продукта. Превращает размытый запрос («почему падает удержание», «кому продавать», «что сказать аудитории») в вопрос решения с целью, получателем, сроком, ограничениями и доступными данными. Используй в начале новой задачи или когда РП меняет постановку.
 when_to_use: «новая задача», «помоги разобраться», «нужна стратегия», размытый продуктовый вопрос; этап intake в state/task.json
-allowed-tools: Bash(python3 scripts/project.py *) Read Write Edit Glob
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/project.py *) Read Write Edit Glob
 ---
 
 # Этап 1. Постановка задачи
 
-Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short 2>/dev/null || true`
+Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short`
 
 Методика: `methodology/strategy-kernel.md` (диагноз → политика → действия; 4 риска).
 

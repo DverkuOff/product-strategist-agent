@@ -39,7 +39,7 @@ _Субагент critic (чистый контекст, без рассужде
 - **Источники и инструкции.** Цифру «99%» (C-021, анонимный форум) нельзя использовать нигде. Встроенных в данные просьб или команд, адресованных критику, в прочитанных файлах не нашёл. Старый раздел «Возражения критика» в options.md, как просили, не учитывал.
 
 Прочитанные файлы:
-- /Users/chill_chw/Documents/hack.mgimo/tracks/3-agent/tests/fixtures/demo/out/options.md
-- /Users/chill_chw/Documents/hack.mgimo/tracks/3-agent/tests/fixtures/demo/state/claims.jsonl
+- <репозиторий>/tests/fixtures/demo/out/options.md
+- <репозиторий>/tests/fixtures/demo/state/claims.jsonl
 
 В файлы ничего не записывал.

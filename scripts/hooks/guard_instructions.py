@@ -321,9 +321,12 @@ QUARANTINE = ("текст снимков источников читает то�
               "и получи утверждения в JSON")
 
 
+SERVICE_FILES = re.compile(r"(readme\.md|manifest\.json)$", re.I)  # служебные файлы папки снимков — не источник
+
+
 def in_materials(path_str: str, r: Path, cwd: Path) -> bool:
     rel = norm_rel(path_str, r, cwd)
-    return bool(rel and MATERIALS_RE.search(rel))
+    return bool(rel and MATERIALS_RE.search(rel) and not SERVICE_FILES.search(rel))
 
 
 def main_thread_read_violation(tool: str, ti: dict, r: Path, cwd: Path) -> str | None:
@@ -349,6 +352,9 @@ def main_thread_read_violation(tool: str, ti: dict, r: Path, cwd: Path) -> str |
             if name in LIST_ONLY:
                 continue
             if name in ("python3", "python") and len(seg) > 1 and re.fullmatch(r"(\./)?scripts/\w+\.py", seg[1]):
+                continue
+            mat_args = [a for a in seg[1:] if re.search(r"materials", a, re.I)]
+            if mat_args and all(SERVICE_FILES.search(a) for a in mat_args):
                 continue
             return QUARANTINE
     return None

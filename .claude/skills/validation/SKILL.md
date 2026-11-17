@@ -2,12 +2,12 @@
 name: validation
 description: Этап 5 — план проверки выбранного решения и запись решения. Для ключевых гипотез и тестов сообщений — ожидаемое изменение, с чем сравниваем, срок наблюдения, нежелательные последствия (guardrails), критерии успеха и отмены; решение в state/decisions.md с основаниями и kill-критериями; итоговая сводка для получателя.
 when_to_use: этап validation в state/task.json; «как проверить», «план пилота», «метрики успеха»
-allowed-tools: Bash(python3 scripts/*) Read Write Edit Glob Grep
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/*) Read Write Edit Glob Grep
 ---
 
 # Этап 5. План проверки и решение
 
-Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short 2>/dev/null || true`
+Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short`
 
 Методика: `methodology/experiments.md`, `methodology/decision-records.md`.
 

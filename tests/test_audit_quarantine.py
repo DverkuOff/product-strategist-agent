@@ -60,6 +60,8 @@ class OrchestratorDoesNotReadSnapshots(Base):
         self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "ls projects/demo/materials/"}}))
         self.assertFalse(self.deny({"tool_name": "Glob", "tool_input": {"pattern": "projects/demo/materials/*.md"}}))
         self.assertFalse(self.deny({"tool_name": "Read", "tool_input": {"file_path": str(self.proj / "out" / "options.md")}}))
+        self.assertFalse(self.deny({"tool_name": "Read", "tool_input": {"file_path": str(self.proj / "materials" / "README.md")}}))
+        self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "cat projects/demo/materials/README.md; echo ---"}}))
 
 
 class UntrustedMarking(Base):
@@ -96,3 +98,19 @@ class UntrustedMarking(Base):
         self.assertIn("Bash", s["hooks"]["PostToolUse"][0]["matcher"])
         self.assertIn("Grep", s["hooks"]["PostToolUse"][0]["matcher"])
         self.assertIn("Read", s["hooks"]["PreToolUse"][0]["matcher"])
+
+
+class SkillInjectedCommands(Base):
+    def test_injected_commands_match_allowed_tools(self):
+        """Встроенная !`команда` скилла проверяется по правилам разрешений; без совпадения вызов скилла прерывается
+        (документация skills, «Permission checks on injected commands»)."""
+        import fnmatch
+        import re
+        from helpers import REPO
+        for f in (REPO / ".claude" / "skills").glob("*/SKILL.md"):
+            text = f.read_text(encoding="utf-8")
+            allowed = re.search(r"^allowed-tools: (.*)$", text, re.M)
+            rules = re.findall(r"Bash\((.*?)\)(?=\s+[A-Z]|\s*$)", allowed.group(1)) if allowed else []
+            for cmd in re.findall(r"!`([^`]+)`", text):
+                self.assertNotIn("||", cmd, f.parent.name)
+                self.assertTrue(any(fnmatch.fnmatchcase(cmd, r) for r in rules), f"{f.parent.name}: {cmd} ← {rules}")

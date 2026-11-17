@@ -3,12 +3,12 @@ name: strategy
 description: Этап 4 — продуктовая и коммуникационная стратегия выбранного варианта. Реестр свойств продукта (факт/гипотеза) в state/product-properties.json; продуктовая стратегия (аудитория и задача, альтернативы, направление и осознанные отказы, польза ↔ затраты и доходы); коммуникационная стратегия (аудитория и ситуация, барьер, ключевое сообщение и подтверждение, роль каналов), где каждое обещание опирается на свойство — «Сверка обещаний».
 when_to_use: этап strategy в state/task.json после выбора варианта
 model: opus
-allowed-tools: Bash(python3 scripts/*) Read Write Edit Glob Grep
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/*) Read Write Edit Glob Grep
 ---
 
 # Этап 4. Продуктовая и коммуникационная стратегия
 
-Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short 2>/dev/null || true`
+Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short`
 
 Методика: `methodology/jtbd.md`, `methodology/positioning-dunford.md`, `methodology/north-star-unit-economics.md`, `methodology/comms-strategy.md`, `methodology/advertising-law-ru.md`.
 Опора: выбранный вариант в `out/options.md` и `state/decisions.md`, утверждения в `state/claims.jsonl`.

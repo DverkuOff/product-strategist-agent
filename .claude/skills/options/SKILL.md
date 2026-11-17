@@ -3,12 +3,12 @@ name: options
 description: Этап 3 — варианты решения. Не меньше трёх содержательно разных вариантов, включая «оставить как есть» и рассмотрение «закрыть направление»; для каждого — что должно быть правдой (с опорой на утверждения и их статус), сильные возражения (pre-mortem), цена и обратимость. Заканчивается выбором РП. Используй после исследования.
 when_to_use: этап options в state/task.json; «какие варианты», «что можно сделать»
 model: opus
-allowed-tools: Bash(python3 scripts/*) Read Write Edit Glob Grep
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/*) Read Write Edit Glob Grep
 ---
 
 # Этап 3. Варианты
 
-Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short 2>/dev/null || true`
+Текущее состояние: !`python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status --short`
 
 Методика: `methodology/playing-to-win.md`, `methodology/premortem.md`, `methodology/decision-records.md` (обратимость).
 Опора: `out/research.md`, `python3 scripts/claims.py list`. Новых фактов на этом этапе не выдумывай: нужен факт — вернись в research.
