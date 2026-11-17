@@ -7,7 +7,8 @@
 Показать:   python3 scripts/claims.py list [--kind fact] [--all]
 Заменить:   python3 scripts/claims.py supersede C-003 --by C-015 --reason "новые данные ЦБ"
 Отозвать:   python3 scripts/claims.py retract C-004 --reason "источник недостоверен"
-Проверено человеком: python3 scripts/claims.py human-verified C-006 --note "сверил в личном кабинете 17.11"
+Проверено человеком (только РП: Claude Code спросит разрешение):
+  python3 scripts/claims.py human-verified C-006 --note "сверил в личном кабинете 17.11"
 
 Формат и правила: .claude/skills/research/claims-format.md
 """
@@ -23,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core  # noqa: E402
 
 ALLOWED_FIELDS = {"text", "kind", "sources", "origin", "confidence", "note", "basis", "contradicts", "supports",
-                  "question", "valid_until", "verified"}
+                  "question", "valid_until"}
+# verified, downgraded и status ставят только скрипты: «проверено человеком» — запись РП в state/human.jsonl
 
 
 def _path(proj: Path) -> Path:
@@ -129,19 +131,31 @@ def cmd_retract(proj: Path, args) -> int:
 
 
 def cmd_human(proj: Path, args) -> int:
-    def fn(c):
-        c["verified"] = "human"
-        c["verified_note"] = args.note
-        c["verified_at"] = core.now_iso()
-        if c.get("downgraded") and c["downgraded"].get("from") == "fact":
-            c["kind"] = "fact"
-            c.pop("downgraded")
+    """Подтверждение РП. Claude Code спрашивает разрешение на эту команду (permissions.ask), поэтому
+    агент не может выполнить её сам; запись идёт в state/human.jsonl с хэшем текста утверждения."""
+    claims = {c.get("id"): c for c in core.read_jsonl(_path(proj))}
+    c = claims.get(args.id)
+    if not c:
+        print(f"Нет утверждения {args.id}", file=sys.stderr)
+        return 2
+    if not (c.get("sources")):
+        print(f"{args.id}: нет источника (url или M-xx) — подтверждать нечего", file=sys.stderr)
+        return 2
+    core.human_add(proj, {"type": "claim_verified", "claim": args.id, "text_sha": core.text_sha(c.get("text", "")),
+                          "note": args.note})
 
-    rc = _update(proj, args.id, fn)
-    if rc == 0:
-        core.append_journal(proj, f"{args.id} проверено человеком: {args.note}")
-        print(f"{args.id}: проверено человеком")
-    return rc
+    def fn(x):
+        x["verified"] = "human"  # для показа; проверка верит только state/human.jsonl
+        x["verified_note"] = args.note
+        x["verified_at"] = core.now_iso()
+        if x.get("downgraded") and x["downgraded"].get("from") == "fact":
+            x["kind"] = "fact"
+            x.pop("downgraded")
+
+    _update(proj, args.id, fn)
+    core.append_journal(proj, f"{args.id} проверено человеком: {args.note}")
+    print(f"{args.id}: проверено человеком (state/human.jsonl)")
+    return 0
 
 
 def main(argv=None) -> int:

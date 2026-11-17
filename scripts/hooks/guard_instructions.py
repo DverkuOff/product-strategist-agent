@@ -52,7 +52,33 @@ HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n(.*?)\n\1\b", re.S)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 
-MATERIALS = re.compile(r"^projects/[^/]+/materials/")
+# Зоны, куда агент не пишет вообще: снимки (новые — только fetch_source.py), входящие файлы РП и журнал
+# подтверждений РП (пишут только команды «только для человека» ниже).
+MATERIALS = re.compile(r"^projects/[^/]+/(materials/|inbox/|state/human\.jsonl$)")
+HUMAN_CMD = re.compile(r"human-verified|approve-plan|human\.jsonl", re.I)
+_ARG = r"('[^'\n]*'|\"[^\"\n]*\"|[^\s'\";&|<>`$()]+)"
+HUMAN_CANON = [
+    re.compile(rf"^python3 scripts/claims\.py human-verified C-\d+ --note {_ARG}$"),
+    re.compile(rf"^python3 scripts/project\.py approve-plan( --note {_ARG})?$"),
+]
+NO_PROMPT_MODES = {"bypassPermissions", "dontAsk"}
+
+
+def human_command_violation(cmd: str, mode: str) -> str | None:
+    """Команды, которые подтверждает только РП. Разрешаем лишь точную форму: на неё в settings.json стоит
+    правило permissions.ask, и Claude Code спрашивает РП. В режимах без вопросов — отказ."""
+    if not HUMAN_CMD.search(cmd):
+        return None
+    c = cmd.strip()
+    if "human.jsonl" in c.casefold():
+        return "журнал подтверждений РП (state/human.jsonl) пишут только команды РП"
+    if not any(rx.match(c) for rx in HUMAN_CANON):
+        return ("подтверждение РП — только отдельной командой в точной форме: "
+                "`python3 scripts/claims.py human-verified C-001 --note \"…\"` или "
+                "`python3 scripts/project.py approve-plan --note \"…\"` (на неё Claude Code спрашивает разрешение у РП)")
+    if mode in NO_PROMPT_MODES:
+        return f"в режиме {mode} Claude Code не спрашивает РП, а эту команду подтверждает только РП"
+    return None
 
 
 def is_material(path_str: str, r: Path) -> bool:
@@ -77,7 +103,7 @@ def bash_violation(cmd: str, r: Path) -> str | None:
         if is_material(m.group(1), r):
             return f"перенаправление вывода в снимок {m.group(1)} (снимки неизменяемы)"
     ops = WRITE_OPS.search(QUOTED.sub(" ", body))
-    if ops and re.search(r"materials/", body):
+    if ops and re.search(r"materials/|inbox/", body, re.I):
         return f"команда изменения файлов ({ops.group(1)}) затрагивает materials/ — снимки неизменяемы, новые только через fetch_source.py"
     mention = MENTION.search(body)
     if ops and mention:
@@ -107,10 +133,13 @@ def main() -> int:
         if is_protected(target, r):
             why = "правка защищённого файла"
         elif is_material(target, r):
-            why = "правка снимка источника: снимки неизменяемы, новые сохраняются только через scripts/fetch_source.py"
+            why = ("запись в снимки, входящие файлы РП или журнал подтверждений РП: снимки неизменяемы и создаются "
+                   "только scripts/fetch_source.py, inbox/ наполняет РП, state/human.jsonl пишут команды РП")
     elif tool == "Bash":
         target = ti.get("command", "")
-        why = bash_violation(target, r)
+        why = human_command_violation(target, inp.get("permission_mode", "default"))
+        if not why and not HUMAN_CMD.search(target):
+            why = bash_violation(target, r)
     if not why:
         return 0
     log_block(r, tool, target, why)

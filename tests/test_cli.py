@@ -65,10 +65,12 @@ class ClaimsCli(TempRepoCase):
     def test_retract_and_human_verified(self):
         self.assertEqual(run(claims_cli.main, ["retract", "C-017", "--reason", "нет методики"])[0], 0)
         self.assertEqual({c["id"]: c for c in self.claims()}["C-017"]["status"], "retracted")
-        self.edit_claim("C-007", kind="hypothesis", downgraded={"from": "fact"})
-        run(claims_cli.main, ["human-verified", "C-007", "--note", "сверил в личном кабинете"])
-        c = {c["id"]: c for c in self.claims()}["C-007"]
+        self.edit_claim("C-006", kind="hypothesis", downgraded={"from": "fact"})
+        run(claims_cli.main, ["human-verified", "C-006", "--note", "сверил в личном кабинете"])
+        c = {c["id"]: c for c in self.claims()}["C-006"]
         self.assertEqual((c["kind"], c["verified"]), ("fact", "human"))
+        self.assertIn('"claim": "C-006"', (self.proj / "state" / "human.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(run(claims_cli.main, ["human-verified", "C-007", "--note", "нет источника"])[0], 2)
 
     def test_supersede_requires_existing(self):
         self.assertEqual(run(claims_cli.main, ["supersede", "C-001", "--by", "C-999", "--reason", "x"])[0], 2)
@@ -84,8 +86,7 @@ class FetchSource(TempRepoCase):
         self.assertNotIn("x()", text)
 
     def test_local_snapshot(self):
-        src = self.tmp / "report.csv"
-        src.write_text("месяц,подключения\n2026-01,100\n", encoding="utf-8")
+        src = self.inbox_file("report.csv", "месяц,подключения\n2026-01,100\n")
         rc, out = run(fetch_source.main, [str(src), "--title", "Выгрузка РП"])
         self.assertEqual(rc, 0)
         snap = sorted((self.proj / "materials").glob("M-12-*.md"))[0]
@@ -97,10 +98,9 @@ class FetchSource(TempRepoCase):
         self.assertNotIn("2026-01,100", out)  # содержимое не печатается в контекст оркестратора
 
     def test_research_log_written_by_script(self):
-        src = self.tmp / "notes.md"
-        src.write_text("Заметки РП: подключений мало, " * 20, encoding="utf-8")
+        src = self.inbox_file("notes.md", "Заметки РП: подключений мало, " * 20)
         run(fetch_source.main, [str(src), "--title", "Заметки РП"])
-        run(fetch_source.main, [str(self.tmp / "нет-такого.pdf")])
+        run(fetch_source.main, [str(self.proj / "inbox" / "нет-такого.pdf")])
         import research_log
         run(research_log.main, ["query", "Защита близких цена", "--result", "цены нет"])
         run(research_log.main, ["discard", "M-11", "--result", "анонимный форум"])
@@ -111,7 +111,8 @@ class FetchSource(TempRepoCase):
         self.assertIn("| отброшен | M-11 | анонимный форум |", log)
 
     def test_trap_warning(self):
-        rc, out = run(fetch_source.main, [str(Path(__file__).parent.parent / "projects" / "demo-zashchita-blizkih" / "traps" / "blog-antifraud-review.html")])
+        trap = (Path(__file__).parent.parent / "projects" / "demo-zashchita-blizkih" / "traps" / "blog-antifraud-review.html").read_text(encoding="utf-8")
+        rc, out = run(fetch_source.main, [str(self.inbox_file("blog.html", trap))])
         self.assertIn("ВНИМАНИЕ", out)
 
 
@@ -149,16 +150,16 @@ class ResearchPlan(TempRepoCase):
     def test_fetch_blocked_until_plan_approved(self):
         import estimate
         self.set_stage("research")
-        src = self.tmp / "a.md"
-        src.write_text("текст " * 100, encoding="utf-8")
-        self.assertEqual(run(fetch_source.main, [str(src)])[0], 3)
+        url = "https://invalid.invalid/page"  # домен не существует: после утверждения плана будет ошибка сети, а не отказ плана
+        self.assertEqual(run(fetch_source.main, [url])[0], 3)
         run(estimate.main, ["--sources", "3", "--searches", "2", "--save"])
-        self.assertEqual(run(fetch_source.main, [str(src)])[0], 3)  # сохранён, но не утверждён
+        self.assertEqual(run(fetch_source.main, [url])[0], 3)  # сохранён, но не утверждён
         rc, out = run(project.main, ["status"])
         self.assertIn("ЖДЁТ УТВЕРЖДЕНИЯ РП", out)
         self.assertEqual(run(project.main, ["approve-plan", "--note", "начать"])[0], 0)
-        self.assertEqual(run(fetch_source.main, [str(src)])[0], 0)
-        self.assertEqual(run(fetch_source.main, [str(src), "--no-plan"])[0], 0)
+        self.assertNotEqual(run(fetch_source.main, [url])[0], 3)
+        # материалы РП из inbox/ план не требуют
+        self.assertEqual(run(fetch_source.main, [str(self.inbox_file("a.md", "текст " * 100))])[0], 0)
 
     def test_plan_vs_fact_in_cost_report(self):
         import cost_report

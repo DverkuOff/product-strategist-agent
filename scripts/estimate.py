@@ -147,7 +147,7 @@ def plan_vs_fact(proj: Path) -> dict | None:
     fact = sum(float(r.get("cost_usd") or 0) for r in rows)
     since = plan.get("approved_at") or plan.get("created_at") or ""
     mats = [m for m in core.list_materials(proj).values() if str(m["meta"].get("retrieved_at", "")) >= since]
-    return {"approved": plan.get("approved"), "estimate": plan["estimate"], "fact_usd": round(fact, 4),
+    return {"approved": core.plan_approved(proj), "estimate": plan["estimate"], "fact_usd": round(fact, 4),
             "fact_sources": len(mats)}
 
 

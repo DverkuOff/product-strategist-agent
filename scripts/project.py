@@ -8,7 +8,7 @@
   python3 scripts/project.py set next_step "собрать отчётность за 2025"
   python3 scripts/project.py wait "Какой вариант берём: B или C?"   # ждём решения РП
   python3 scripts/project.py log "РП уточнил: получатель — CPO"
-  python3 scripts/project.py approve-plan --note "РП: начать"   # после утверждения плана исследования
+  python3 scripts/project.py approve-plan --note "РП: начать"   # утверждение плана: Claude Code спросит РП
   python3 scripts/project.py list | use <slug>
 """
 from __future__ import annotations
@@ -135,7 +135,7 @@ def status_text(proj: Path, short: bool = False) -> str:
         pv = estimate.plan_vs_fact(proj)
         if pv:
             e = pv["estimate"]
-            st = "утверждён" if pv["approved"] else "ЖДЁТ УТВЕРЖДЕНИЯ РП"
+            st = "утверждён" if core.plan_approved(proj) else "ЖДЁТ УТВЕРЖДЕНИЯ РП"
             lines.append(f"План исследования {st}: оценка ${e['usd']:.2f} (${e['usd_low']:.2f}–${e['usd_high']:.2f}), "
                          f"{e['sources']} источников; факт этапа research ${pv['fact_usd']:.2f}, снимков {pv['fact_sources']}")
     except Exception:  # noqa: BLE001
@@ -221,7 +221,8 @@ def cmd_approve_plan(args) -> int:
     if not plan:
         print("Нет state/research-plan.json: сначала python3 scripts/estimate.py --sources N --searches M --save", file=sys.stderr)
         return 2
-    plan["approved"] = True
+    core.human_add(proj, {"type": "plan_approved", "plan_sha": core.plan_sha(plan), "note": args.note})
+    plan["approved"] = True  # для показа; fetch_source верит только записи в state/human.jsonl
     plan["approved_at"] = core.now_iso()
     if args.note:
         plan["approved_note"] = args.note
@@ -234,6 +235,10 @@ def cmd_approve_plan(args) -> int:
                         + (f": {args.note}" if args.note else ""))
     print("План исследования утверждён: можно собирать материалы.")
     return 0
+
+
+def plan_approved(proj: Path) -> bool:
+    return core.plan_approved(proj)
 
 
 def cmd_log(args) -> int:

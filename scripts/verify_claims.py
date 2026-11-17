@@ -7,8 +7,10 @@
   3. снимок не синтетический (kind: synthetic) и само утверждение не synthetic — иначе понижение;
   4. все числа и имена собственные из текста есть в снимке — в окрестности цитаты (±700 знаков) или
      в атрибуции снимка (title, publisher, published); без цитаты — во всём снимке (слабее) — иначе понижение;
-  5. verified: human — «недоступно автоматически, проверено человеком»: автоматическую проверку
-     пропускаем, но источник (url или материал) обязателен.
+  5. «проверено человеком» — только если в state/human.jsonl есть запись РП с хэшем текущего текста
+     (команду claims.py human-verified агент сам выполнить не может: Claude Code спрашивает РП);
+     пометка verified в claims.jsonl без такой записи игнорируется.
+  6. снимок локального файла не из inbox/ (файл, который агент сам написал в папке задачи) — не основание факта.
 Семантику («подтверждает ли источник вывод») скрипт не проверяет — это осознанное ограничение.
 
 Снимки неизменяемы: если sha256 файла не совпадает с materials/MANIFEST.json (снимок правили после
@@ -88,6 +90,7 @@ def check(proj: Path) -> dict:
         rep["errors"].append(str(e))
         return rep
     mats = core.list_materials(proj)
+    human_ok = core.human_verified_ids(proj, claims)
     changed, unlisted = core.manifest_check(proj)
     for mid, why in changed.items():
         rep["errors"].append(f"{mid}: {why}")
@@ -123,12 +126,14 @@ def check(proj: Path) -> dict:
                 rep["warnings"].append(f"{cid}: прогноз без оснований (basis: [C-...] или sources)")
             continue
         sources = c.get("sources") or []
-        if c.get("verified") == "human":
+        if cid in human_ok:
             if not sources:
                 rep["downgrade"].append((cid, "no_source", "проверено человеком, но источник не указан"))
             else:
                 rep["human"].append(cid)
             continue
+        if c.get("verified") == "human":
+            rep["warnings"].append(f"{cid}: пометка verified: human без записи РП в state/human.jsonl — игнорируется")
         if not sources:
             reason = "прежний вывод агента без источника" if c.get("origin") == "agent" else "нет источника"
             rep["downgrade"].append((cid, "no_source", reason))
@@ -146,6 +151,9 @@ def check(proj: Path) -> dict:
                 continue
             if mid in changed:
                 bad = ("snapshot_changed", f"{mid}: {changed[mid]}")
+                continue
+            if core.material_is_agent_file(mat):
+                bad = ("agent_file", f"{mid} — файл из папки задачи, а не источник или материал РП из inbox/")
                 continue
             if core.material_is_synthetic(mat):
                 bad = ("synthetic", f"{mid} — синтетический материал, не основание факта")

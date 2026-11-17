@@ -68,7 +68,12 @@ class VerifyClaims(TempRepoCase):
         self.assertNotIn("C-091", reasons)  # синтетика остаётся синтетикой
 
     def test_human_verified_skips_auto_check(self):
-        self.edit_claim("C-005", text="Через Еву можно защитить до 77 номеров", verified="human")
+        import claims as claims_cli
+        import io
+        from contextlib import redirect_stdout
+        self.edit_claim("C-005", text="Через Еву можно защитить до 77 номеров")
+        with redirect_stdout(io.StringIO()):
+            claims_cli.main(["human-verified", "C-005", "--note", "сверил в приложении"])
         rep = verify_claims.check(self.proj)
         self.assertIn("C-005", rep["human"])
         self.assertNotIn("C-005", [d[0] for d in rep["downgrade"]])
@@ -129,8 +134,7 @@ class ImmutableSnapshots(TempRepoCase):
         from contextlib import redirect_stdout
         import core
         import fetch_source
-        src = self.tmp / "x.md"
-        src.write_text("новый материал " * 30, encoding="utf-8")
+        src = self.inbox_file("x.md", "новый материал " * 30)
         with redirect_stdout(io.StringIO()):
             fetch_source.main([str(src)])
         data = core.read_json(self.proj / "materials" / core.MANIFEST, {})

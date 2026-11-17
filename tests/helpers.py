@@ -55,6 +55,13 @@ class TempRepoCase(unittest.TestCase):
                 r.update(fields)
         self.write_claims(rows)
 
+    def inbox_file(self, name: str, content: str) -> Path:
+        """Файл, который РП положил во входящие задачи (единственное место для локальных материалов)."""
+        p = self.proj / "inbox" / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return p
+
     def replace_in(self, rel: str, old: str, new: str) -> None:
         p = self.proj / rel
         s = p.read_text(encoding="utf-8")

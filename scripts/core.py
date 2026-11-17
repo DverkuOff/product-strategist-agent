@@ -172,6 +172,12 @@ def list_materials(proj: Path) -> dict[str, dict]:
     return out
 
 
+def material_is_agent_file(mat: dict) -> bool:
+    """Снимок локального файла, сохранённого не из inbox/ РП (старые снимки без origin считаются веб/РП)."""
+    meta = mat.get("meta", {})
+    return str(meta.get("url", "")).startswith("file:") and meta.get("origin") not in (None, "", "inbox", "synthetic")
+
+
 def material_is_synthetic(mat: dict) -> bool:
     meta = mat.get("meta", {})
     return str(meta.get("kind", "")).lower() == "synthetic" or str(meta.get("synthetic", "")).lower() in {"true", "yes", "1"}
@@ -374,3 +380,50 @@ def manifest_check(proj: Path) -> tuple[dict[str, str], list[str]]:
             bad[mid] = "снимок изменён после сохранения (sha256 не совпадает с манифестом)"
     unlisted = [mid for mid in list_materials(proj) if mid not in data]
     return bad, unlisted
+
+
+# ---------- журнал человека (state/human.jsonl) ----------
+# Подтверждения, которые даёт только РП: «факт проверен человеком» и «план исследования утверждён».
+# Файл защищён PreToolUse-хуком от записи агентом; пишут его только команды claims.py human-verified
+# и project.py approve-plan, которые Claude Code выполняет после запроса разрешения у РП (permissions.ask).
+# Флаги verified/approved в claims.jsonl и research-plan.json — только для показа, проверки им не верят.
+
+HUMAN_LEDGER = "human.jsonl"
+
+
+def text_sha(s: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(str(s).encode("utf-8")).hexdigest()[:16]
+
+
+def human_records(proj: Path) -> list[dict]:
+    try:
+        return read_jsonl(proj / "state" / HUMAN_LEDGER)
+    except ValueError:
+        return []
+
+
+def human_add(proj: Path, rec: dict) -> None:
+    rec = {"at": now_iso(), **rec}
+    with (proj / "state" / HUMAN_LEDGER).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def human_verified_ids(proj: Path, claims: list[dict]) -> set[str]:
+    """ID утверждений, подтверждённых РП, у которых текст не менялся после подтверждения."""
+    ok = {(r.get("claim"), r.get("text_sha")) for r in human_records(proj) if r.get("type") == "claim_verified"}
+    return {c["id"] for c in claims if (c.get("id"), text_sha(c.get("text", ""))) in ok}
+
+
+def plan_sha(plan: dict) -> str:
+    return text_sha(json.dumps({"estimate": plan.get("estimate"), "created_at": plan.get("created_at")},
+                               ensure_ascii=False, sort_keys=True))
+
+
+def plan_approved(proj: Path) -> bool:
+    plan = read_json(proj / "state" / "research-plan.json", None)
+    if not plan:
+        return False
+    sha = plan_sha(plan)
+    return any(r.get("type") == "plan_approved" and r.get("plan_sha") == sha for r in human_records(proj))

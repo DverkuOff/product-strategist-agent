@@ -8,8 +8,10 @@ PreToolUse-хук запрещает агенту править materials/ (и�
 модели лишь через субагента source-reader (карантин от prompt injection).
 
   python3 scripts/fetch_source.py https://example.ru/news/1 --title "Пресс-релиз"
-  python3 scripts/fetch_source.py ~/Downloads/report.csv --title "Выгрузка РП" --kind table
-  python3 scripts/fetch_source.py notes.md --kind synthetic   # синтетика: не основание факта
+  python3 scripts/fetch_source.py projects/<задача>/inbox/report.csv --title "Выгрузка РП" --kind table
+  python3 scripts/fetch_source.py projects/<задача>/inbox/page.html --url https://… # страница, сохранённая РП вручную
+  python3 scripts/fetch_source.py projects/<задача>/out/synthetic-1.md --kind synthetic  # синтетика: не основание факта
+Локальные файлы — только из projects/<задача>/inbox/ (их кладёт РП) или синтетика из папки задачи.
 """
 from __future__ import annotations
 
@@ -137,8 +139,32 @@ def convert_local(path: Path) -> tuple[str, str, bytes]:
     return "", out.stdout, data
 
 
+SECRET_NAME = re.compile(r"^\.|\.env|\.pem$|\.key$|^id_[a-z0-9]+|credential|secret|password|token", re.I)
+
+
+def local_source_policy(proj: Path, path: Path, kind: str | None) -> tuple[str | None, str]:
+    """(origin или None, причина отказа). Локальный файл — только материал РП из projects/<задача>/inbox/
+    или синтетика (kind synthetic) из папки задачи. Свой файл агента (out/, state/) не может стать
+    снимком-основанием факта, а секреты (.env, ключи, файлы вне репозитория) не попадают в материалы."""
+    try:
+        rp = path.expanduser().resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None, f"файл не найден: {path}"
+    if not rp.is_file():
+        return None, f"не файл: {path}"
+    if SECRET_NAME.search(rp.name):
+        return None, f"«{rp.name}» похож на секрет или служебный файл — такие файлы в материалы не сохраняются"
+    inbox = (proj / "inbox").resolve()
+    if rp.is_relative_to(inbox):
+        return "inbox", ""
+    if kind == "synthetic" and rp.is_relative_to(proj.resolve()) and not rp.is_relative_to((proj / "materials").resolve()):
+        return "synthetic", ""
+    return None, (f"локальные файлы принимаются только из {inbox.relative_to(core.repo_root()) if inbox.is_relative_to(core.repo_root()) else inbox}/ "
+                  "(их кладёт туда РП) — файл, написанный агентом, не может стать источником факта")
+
+
 def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, kind: str, note: str = "",
-                  publisher: str = "", published: str = "") -> Path:
+                  publisher: str = "", published: str = "", origin: str = "web") -> Path:
     mid = next_id(proj)
     fname = f"{mid}-{slugify(title)}.md"
     meta = {
@@ -148,6 +174,7 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
         "retrieved_at": core.now_iso(),
         "sha256": hashlib.sha256(raw).hexdigest(),
         "kind": kind,
+        "origin": origin,
         "trust": "untrusted",
     }
     if publisher:
@@ -175,7 +202,7 @@ def main(argv=None) -> int:
     ap.add_argument("--publisher", default="", help="кто опубликовал: компания, издание, регулятор")
     ap.add_argument("--published", default="", help="дата публикации ГГГГ-ММ-ДД, если известна")
     ap.add_argument("--project", default=None)
-    ap.add_argument("--no-plan", action="store_true", help="сохранить без утверждённого плана (материалы РП, дозагрузка по просьбе РП)")
+    ap.add_argument("--url", default="", help="для файла из inbox/: исходный URL страницы, которую РП сохранил вручную")
     args = ap.parse_args(argv)
 
     proj = core.project_path(args.project)
@@ -190,11 +217,11 @@ def main(argv=None) -> int:
     if not args.source:
         ap.error("нужен URL или путь к файлу")
     stage = core.load_task(proj).get("stage")
-    plan = core.read_json(proj / "state" / "research-plan.json", None)
-    if stage == "research" and not (plan and plan.get("approved")) and not args.no_plan:
+    is_web = bool(re.match(r"https?://", args.source))
+    if is_web and stage == "research" and not core.plan_approved(proj):
         print("Сначала план исследования на утверждение: вопросы, источники и оценка стоимости "
               "(python3 scripts/estimate.py --sources N --searches M --save, out/research-plan.md). "
-              "После «начать» от РП: python3 scripts/project.py approve-plan.", file=sys.stderr)
+              "Утверждает РП: python3 scripts/project.py approve-plan (Claude Code спросит у РП разрешение).", file=sys.stderr)
         return 3
     src = args.source
     try:
@@ -212,9 +239,14 @@ def main(argv=None) -> int:
             kind, url = args.kind or "web", src
         else:
             p = Path(src).expanduser()
+            origin, why = local_source_policy(proj, p, args.kind)
+            if not origin:
+                core.log_research(proj, "fail", src, f"отказ: {why}")
+                print(f"ОТКАЗ: {why}.", file=sys.stderr)
+                return 2
             title, text, raw = convert_local(p)
             kind = args.kind or ("table" if p.suffix.lower() in {".csv", ".tsv", ".xlsx"} else "document")
-            url = f"file:{p.name}"
+            url = args.url or f"file:{p.name}"
     except Exception as e:  # noqa: BLE001 — сообщаем агенту о сбое, а не падаем трейсбеком
         core.log_research(proj, "fail", src, f"{type(e).__name__}: {str(e)[:120]}")
         print(f"НЕ УДАЛОСЬ получить {src}: {type(e).__name__}: {str(e)[:200]}. "
@@ -223,7 +255,8 @@ def main(argv=None) -> int:
     if len(text.strip()) < 200:
         print(f"ВНИМАНИЕ: в {src} почти нет текста ({len(text.strip())} символов) — возможно, капча или JS-страница.", file=sys.stderr)
     out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=args.note,
-                        publisher=args.publisher, published=args.published)
+                        publisher=args.publisher, published=args.published,
+                        origin="web" if is_web else origin)
     hits = injection.scan(text)
     core.log_research(proj, "open", f"{out.name.split('-')[0]}-{out.name.split('-')[1]} {args.title or title or src} ({url})",
                       f"снимок {len(text)} символов" + (f"; {len(hits)} фрагм., похожих на инструкции агенту" if hits else ""))
