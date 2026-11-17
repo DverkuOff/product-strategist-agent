@@ -16,12 +16,17 @@ PreToolUse-хук запрещает агенту править materials/ (и�
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import html
+import ipaddress
+import os
 import re
+import socket
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -87,12 +92,51 @@ def html_to_text(raw: str) -> tuple[str, str]:
     return p.title.strip(), text.strip()
 
 
-def fetch_url(url: str, timeout: int = 25) -> tuple[bytes, str]:
+MAX_BYTES = 5_000_000      # больше — обрезаем: огромная страница съедает таймаут Stop-хука
+MIN_TEXT_CHARS = 300       # меньше — JS-страница, антибот или пустой ответ: это не источник
+ALLOW_PRIVATE = False      # только для тестов (меняется из кода, не из командной строки): разрешает 127.0.0.1
+BLOCK_WORDS = re.compile(r"вы не робот|не робот\?|подтвердите, что (вы|запросы)|captcha|капч|access denied|доступ (ограничен|запрещ)|"
+                         r"enable javascript|включите javascript|checking your browser|ddos-guard|qrator|cloudflare|"
+                         r"attention required|are you a robot|unusual traffic", re.I)
+
+
+def check_url(url: str) -> None:
+    """Защита от SSRF: только http(s) и только публичные адреса — на каждом шаге редиректа."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme not in ("http", "https"):
+        raise ValueError(f"схема «{u.scheme}» запрещена: только http и https")
+    host = u.hostname or ""
+    if not host:
+        raise ValueError("в адресе нет хоста")
+    try:
+        infos = socket.getaddrinfo(host, u.port or (443 if u.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(f"хост {host} не найден ({e})") from e
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if ALLOW_PRIVATE and ip.is_loopback:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise ValueError(f"адрес {host} ({ip}) во внутренней сети — загрузка запрещена (SSRF)")
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_url(url: str, timeout: int = 25, max_bytes: int = MAX_BYTES) -> tuple[bytes, str, str, bool]:
+    """(байты, Content-Type, итоговый URL после редиректов, обрезано ли)."""
+    check_url(url)
+    opener = urllib.request.build_opener(_SafeRedirect)
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru,en;q=0.8"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — URL задаёт РП
-        data = r.read()
+    with opener.open(req, timeout=timeout) as r:  # noqa: S310 — URL проверен check_url
+        data = r.read(max_bytes + 1)
         ctype = r.headers.get("Content-Type", "")
-    return data, ctype
+        final = r.geturl()
+    truncated = len(data) > max_bytes
+    return data[:max_bytes], ctype, final, truncated
 
 
 def decode(data: bytes, ctype: str) -> str:
@@ -100,11 +144,54 @@ def decode(data: bytes, ctype: str) -> str:
     enc = m.group(1) if m else None
     if not enc:
         m = re.search(rb"<meta[^>]+charset=[\"']?([\w\-]+)", data[:4000], re.I)
-        enc = m.group(1).decode() if m else "utf-8"
+        enc = m.group(1).decode() if m else None
+    if enc:
+        try:
+            text = data.decode(enc, errors="replace")
+            if text.count("\ufffd") < 10:
+                return text
+        except LookupError:
+            pass
     try:
-        return data.decode(enc, errors="replace")
-    except LookupError:
-        return data.decode("utf-8", errors="replace")
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("cp1251", errors="replace")  # русские сайты без charset часто в cp1251
+
+
+def blocked_reason(title: str, text: str) -> str | None:
+    t = text.strip()
+    if len(t) < MIN_TEXT_CHARS:
+        return f"почти нет текста ({len(t)} символов): JS-страница, антибот или пустой ответ"
+    if len(t) < 5000 and (BLOCK_WORDS.search(title or "") or BLOCK_WORDS.search(t[:3000])):
+        return "похоже на капчу или проверку антибота"
+    return None
+
+
+@contextlib.contextmanager
+def materials_lock(proj: Path):
+    """Параллельные запуски не должны получить один и тот же M-id."""
+    (proj / "materials").mkdir(parents=True, exist_ok=True)
+    fh = open(proj / "materials" / ".lock", "a+")
+    try:
+        try:
+            import fcntl
+
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        except ImportError:  # Windows
+            pass
+        yield
+    finally:
+        fh.close()
+
+
+def find_duplicate(proj: Path, url: str, final_url: str, raw_sha: str) -> str | None:
+    mf = core.read_json(proj / "materials" / core.MANIFEST, {}) or {}
+    for mid, m in core.list_materials(proj).items():
+        meta = m["meta"]
+        urls = {meta.get("url"), meta.get("final_url"), (mf.get(mid) or {}).get("final_url")} - {None, ""}
+        if meta.get("sha256") == raw_sha or (url and url in urls) or (final_url and final_url in urls):
+            return mid
+    return None
 
 
 def next_id(proj: Path) -> str:
@@ -164,7 +251,7 @@ def local_source_policy(proj: Path, path: Path, kind: str | None) -> tuple[str |
 
 
 def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, kind: str, note: str = "",
-                  publisher: str = "", published: str = "", origin: str = "web") -> Path:
+                  publisher: str = "", published: str = "", origin: str = "web", final_url: str = "") -> Path:
     mid = next_id(proj)
     fname = f"{mid}-{slugify(title)}.md"
     meta = {
@@ -177,6 +264,8 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
         "origin": origin,
         "trust": "untrusted",
     }
+    if final_url and final_url != url:
+        meta["final_url"] = final_url
     if publisher:
         meta["publisher"] = publisher
     if published:
@@ -186,8 +275,9 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
     front = "\n".join(f'{k}: "{v}"' if any(c in str(v) for c in ":#") else f"{k}: {v}" for k, v in meta.items())
     out = proj / "materials" / fname
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(f"---\n{front}\n---\n\n{text.strip()}\n", encoding="utf-8")
-    core.manifest_add(proj, mid, out)  # снимок неизменяем: verify_claims сверяет sha256 с манифестом
+    with open(out, "x", encoding="utf-8") as fh:  # «x»: файл с этим именем не перезапишется
+        fh.write(f"---\n{front}\n---\n\n{text.strip()}\n")
+    core.manifest_add(proj, mid, out, final_url=final_url or (url if url.startswith("http") else ""))  # снимок неизменяем: verify_claims сверяет sha256 с манифестом
     return out
 
 
@@ -224,11 +314,12 @@ def main(argv=None) -> int:
               "Утверждает РП: python3 scripts/project.py approve-plan (Claude Code спросит у РП разрешение).", file=sys.stderr)
         return 3
     src = args.source
+    truncated, final_url = False, ""
     try:
-        if re.match(r"https?://", src):
-            raw, ctype = fetch_url(src)
+        if is_web:
+            raw, ctype, final_url, truncated = fetch_url(src)
             if "pdf" in ctype.lower() or src.lower().endswith(".pdf"):
-                tmp = proj / "materials" / ".tmp.pdf"
+                tmp = proj / "materials" / f".tmp-{os.getpid()}.pdf"
                 tmp.write_bytes(raw)
                 try:
                     title, text, _ = convert_local(tmp)
@@ -250,13 +341,26 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001 — сообщаем агенту о сбое, а не падаем трейсбеком
         core.log_research(proj, "fail", src, f"{type(e).__name__}: {str(e)[:120]}")
         print(f"НЕ УДАЛОСЬ получить {src}: {type(e).__name__}: {str(e)[:200]}. "
-              f"Запиши пробел в research.md или попроси РП сохранить страницу вручную.", file=sys.stderr)
+              f"Запиши пробел в research.md или попроси РП сохранить страницу в inbox/.", file=sys.stderr)
         return 1
-    if len(text.strip()) < 200:
-        print(f"ВНИМАНИЕ: в {src} почти нет текста ({len(text.strip())} символов) — возможно, капча или JS-страница.", file=sys.stderr)
-    out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=args.note,
-                        publisher=args.publisher, published=args.published,
-                        origin="web" if is_web else origin)
+    if is_web or kind in ("web",):
+        why = blocked_reason(title, text)
+        if why:
+            core.log_research(proj, "fail", src, why)
+            print(f"НЕ ОТКРЫЛСЯ {src}: {why}. Снимок не сохранён. Попроси РП открыть страницу в браузере, сохранить "
+                  f"её в inbox/ и выполни fetch_source.py inbox/<файл> --url {src}", file=sys.stderr)
+            return 1
+    raw_sha = hashlib.sha256(raw).hexdigest()
+    with materials_lock(proj):
+        dup = find_duplicate(proj, url if is_web or args.url else "", final_url, raw_sha)
+        if dup:
+            core.log_research(proj, "note", src, f"повтор: уже есть {dup}, новый снимок не создан")
+            print(f"Источник уже есть: {dup} (тот же адрес или то же содержимое). Новый снимок не создан.")
+            return 0
+        note = "; ".join(x for x in (args.note, f"обрезано до {MAX_BYTES // 1_000_000} МБ" if truncated else "") if x)
+        out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=note,
+                            publisher=args.publisher, published=args.published,
+                            origin="web" if is_web else origin, final_url=final_url)
     hits = injection.scan(text)
     core.log_research(proj, "open", f"{out.name.split('-')[0]}-{out.name.split('-')[1]} {args.title or title or src} ({url})",
                       f"снимок {len(text)} символов" + (f"; {len(hits)} фрагм., похожих на инструкции агенту" if hits else ""))

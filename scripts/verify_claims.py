@@ -100,6 +100,8 @@ def check(proj: Path) -> dict:
         return rep
     mats = core.list_materials(proj)
     human_ok = core.human_verified_ids(proj, claims)
+    for mid, files in core.duplicate_material_ids(proj).items():
+        rep["errors"].append(f"{mid}: id снимка повторяется в файлах {', '.join(files)} — непонятно, какой из них основание")
     changed, unlisted = core.manifest_check(proj)
     for mid, why in changed.items():
         rep["errors"].append(f"{mid}: {why}")

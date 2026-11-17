@@ -172,6 +172,19 @@ def list_materials(proj: Path) -> dict[str, dict]:
     return out
 
 
+def duplicate_material_ids(proj: Path) -> dict[str, list[str]]:
+    """M-id, которые встречаются в нескольких файлах снимков (гонка или ручное копирование)."""
+    seen: dict[str, list[str]] = {}
+    mdir = proj / "materials"
+    for f in sorted(mdir.glob("M-*.md")) if mdir.is_dir() else []:
+        meta, _ = parse_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        m = re.match(r"(M-\d+)", f.name)
+        mid = meta.get("id") or (m.group(1) if m else None)
+        if mid:
+            seen.setdefault(mid, []).append(f.name)
+    return {k: v for k, v in seen.items() if len(v) > 1}
+
+
 def material_is_agent_file(mat: dict) -> bool:
     """Снимок локального файла, сохранённого не из inbox/ РП (старые снимки без origin считаются веб/РП)."""
     meta = mat.get("meta", {})
@@ -359,10 +372,12 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def manifest_add(proj: Path, mid: str, path: Path) -> None:
+def manifest_add(proj: Path, mid: str, path: Path, final_url: str = "") -> None:
     f = proj / "materials" / MANIFEST
     data = read_json(f, {}) or {}
     data[mid] = {"file": Path(path).name, "sha256": file_sha256(path), "saved_at": now_iso()}
+    if final_url:
+        data[mid]["final_url"] = final_url
     write_json(f, dict(sorted(data.items())))
 
 

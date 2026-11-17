@@ -44,3 +44,5 @@ build/
 
 # Служебное: пути локальных транскриптов Claude Code для досчёта стоимости
 projects/*/state/.cost-sessions.json
+materials/.lock
+projects/*/materials/.lock

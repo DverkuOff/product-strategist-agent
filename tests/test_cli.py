@@ -112,7 +112,8 @@ class FetchSource(TempRepoCase):
 
     def test_trap_warning(self):
         trap = (Path(__file__).parent.parent / "projects" / "demo-zashchita-blizkih" / "traps" / "blog-antifraud-review.html").read_text(encoding="utf-8")
-        rc, out = run(fetch_source.main, [str(self.inbox_file("blog.html", trap))])
+        # содержимое чуть меняем: точная копия уже есть в эталоне (M-10), и повтор скрипт не сохраняет
+        rc, out = run(fetch_source.main, [str(self.inbox_file("blog.html", trap + "<p>копия РП</p>"))])
         self.assertIn("ВНИМАНИЕ", out)
 
 
