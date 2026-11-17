@@ -5,12 +5,14 @@
   1. есть источник (sources) — иначе понижение до гипотезы («прежний ответ агента не факт»);
   2. источник — сохранённый снимок M-xx в materials/ — иначе понижение;
   3. снимок не синтетический (kind: synthetic) и само утверждение не synthetic — иначе понижение;
-  4. все числа и имена собственные из текста есть в снимке — в окрестности цитаты (±700 знаков) или
-     в атрибуции снимка (title, publisher, published); без цитаты — во всём снимке (слабее) — иначе понижение;
-  5. «проверено человеком» — только если в state/human.jsonl есть запись РП с хэшем текущего текста
+  4. у источника есть дословная цитата (регистр, ё/е, пробелы и кавычки не важны), и она есть в снимке;
+     снимок не пустой (≥100 символов) — иначе понижение;
+  5. числа (с учётом «тыс./млн/млрд», % и форматов дат) и имена собственные (целым словом, основа ≥4 букв)
+     есть в предложении цитаты или в атрибуции снимка (title, publisher, published) — иначе понижение;
+  6. «проверено человеком» — только если в state/human.jsonl есть запись РП с хэшем текущего текста
      (команду claims.py human-verified агент сам выполнить не может: Claude Code спрашивает РП);
      пометка verified в claims.jsonl без такой записи игнорируется.
-  6. снимок локального файла не из inbox/ (файл, который агент сам написал в папке задачи) — не основание факта.
+  7. снимок локального файла не из inbox/ (файл, который агент сам написал в папке задачи) — не основание факта.
 Семантику («подтверждает ли источник вывод») скрипт не проверяет — это осознанное ограничение.
 
 Снимки неизменяемы: если sha256 файла не совпадает с materials/MANIFEST.json (снимок правили после
@@ -40,46 +42,53 @@ MARK_RE = re.compile(r"\[(факт|гипотеза|прогноз|синтет�
 RU_KIND = {"факт": "fact", "гипотеза": "hypothesis", "прогноз": "forecast", "синтетика": "synthetic"}
 
 
-def missing_in_snapshot(text: str, snapshot: str, full: str | None = None) -> list[str]:
-    """Числа и имена собственные из text, которых нет в snapshot (окрестности цитаты).
+MIN_SNAPSHOT_CHARS = 100  # меньше — капча, JS-страница или пустой файл: не основание факта
+SENT_BOUND = re.compile(r"(?<=[.!?…])\s+(?=[«\"„(\-—–]?\s*[A-ZА-ЯЁ0-9])|\n")
 
-    Слово в начале предложения может быть и именем («Билайн предлагает…»), и обычным словом
-    («Обзор сообщает…»), поэтому его ищем во всём снимке full: так ловим чужие бренды и не
-    понижаем факт из-за обычного слова.
-    """
+
+def quote_regex(quote: str) -> re.Pattern | None:
+    """Цитата как регулярное выражение по исходному тексту: регистр, ё/е, пробелы и кавычки не важны."""
+    nq = core.norm_text(quote).strip()
+    if not nq:
+        return None
+    parts = []
+    q = r"[«»\"„“”']*"  # кавычки в снимке могут стоять где угодно: norm_text их из цитаты убрал
+    for ch in nq:
+        if ch == " ":
+            parts.append(r"[\s«»\"„“”']+")
+        elif ch == "е":
+            parts.append("[её]" + q)
+        else:
+            parts.append(re.escape(ch) + q)
+    return re.compile("".join(parts), re.I)
+
+
+def quote_sentences(body: str, quote: str) -> str | None:
+    """Предложение (или несколько), в котором стоит цитата; None — цитаты в снимке нет."""
+    rx = quote_regex(quote)
+    m = rx.search(body) if rx else None
+    if not m:
+        return None
+    starts = [b.end() for b in SENT_BOUND.finditer(body) if b.end() <= m.start()]  # endpos ломает lookahead
+    a = starts[-1] if starts else 0
+    e = SENT_BOUND.search(body, m.end())
+    return body[a: e.start() if e else len(body)]
+
+
+def missing_in_evidence(text: str, evidence: str, full: str) -> list[str]:
+    """Числа, даты и имена собственные утверждения, которых нет в основании.
+
+    Числа и даты — в предложении цитаты (с учётом «тыс./млн/млрд», %, форматов дат). Имена — там же целым
+    словом. Первое слово предложения может быть и именем («Билайн предлагает…»), и обычным словом
+    («Обзор сообщает…»), поэтому его ищем во всём снимке full."""
     text = ID_RE.sub(" ", text)
-    snap_norm = core.norm_text(snapshot)
-    full_norm = core.norm_text(full) if full is not None else snap_norm
-    snap_nums = core.numbers_in(snapshot)
+    ev_norm, full_norm = core.norm_text(evidence), core.norm_text(full)
     first = core.sentence_initial_words(text)
-    missing = []
-    for n in core.extract_numbers(text):
-        if n not in snap_nums:
-            missing.append(n)
+    missing = core.missing_quantities(text, evidence)
     for w in core.extract_proper_nouns(text):
-        where = full_norm if w in first else snap_norm
-        if core.stem(w) not in where:
+        if not core.name_found(w, full_norm if w in first else ev_norm):
             missing.append(w)
-    # без дублей, порядок сохраняем
     return list(dict.fromkeys(missing))
-
-
-WINDOW = 700  # символов вокруг цитаты: на новостной странице много посторонних чисел и имён
-
-
-def evidence_window(body: str, quote: str | None, cid: str, mid: str, rep: dict) -> str:
-    """Где искать числа и имена: окрестность цитаты, если она нашлась, иначе весь снимок (с предупреждением)."""
-    nb = core.norm_text(body)
-    if quote:
-        nq = core.norm_text(quote).strip()
-        key = nq[:120]
-        i = nb.find(key) if key else -1
-        if i >= 0:
-            return nb[max(0, i - WINDOW): i + len(nq) + WINDOW]
-        rep["warnings"].append(f"{cid}: цитата не найдена дословно в {mid} — числа и имена проверены по всему снимку")
-    else:
-        rep["warnings"].append(f"{cid}: у источника {mid} нет цитаты — числа и имена проверены по всему снимку (слабее)")
-    return nb
 
 
 def check(proj: Path) -> dict:
@@ -160,14 +169,26 @@ def check(proj: Path) -> dict:
                 continue
             meta = mat.get("meta", {})
             attribution = " ".join(str(meta.get(k, "")) for k in ("title", "publisher", "published"))
-            snaps.append(evidence_window(mat["body"], s.get("quote"), cid, mid, rep) + " " + core.norm_text(attribution))
-            fulls.append(mat["body"] + " " + attribution)
+            body = mat["body"]
+            if len(body.strip()) < MIN_SNAPSHOT_CHARS:
+                bad = ("empty_snapshot", f"{mid}: снимок почти пустой ({len(body.strip())} символов) — капча, JS-страница или пустой файл")
+                continue
+            quote = s.get("quote")
+            if not quote:
+                bad = ("no_quote", f"у источника {mid} нет цитаты — факт нечем проверить")
+                continue
+            sent = quote_sentences(body, quote)
+            if sent is None:
+                bad = ("quote_not_found", f"цитаты нет в {mid}: «{quote[:60]}»")
+                continue
+            snaps.append(sent + " " + attribution)
+            fulls.append(body + " " + attribution)
         if not snaps:
             rep["downgrade"].append((cid, *(bad or ("no_snapshot", "нет пригодного снимка"))))
             continue
-        miss = missing_in_snapshot(c.get("text", ""), "\n".join(snaps), "\n".join(fulls))
+        miss = missing_in_evidence(c.get("text", ""), "\n".join(snaps), "\n".join(fulls))
         if miss:
-            rep["downgrade"].append((cid, "not_in_snapshot", "нет в снимке: " + ", ".join(miss)))
+            rep["downgrade"].append((cid, "not_in_snapshot", "нет в предложении цитаты: " + ", ".join(miss)))
         else:
             rep["ok"].append(cid)
 

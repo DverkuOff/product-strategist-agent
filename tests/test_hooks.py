@@ -112,6 +112,19 @@ class Hooks(TempRepoCase):
         self.assertEqual(rc, 2)
         self.assertIn("Цена бездействия", err)
 
+    def test_stage_gate_shows_warnings(self):
+        # пометка verified без записи РП — предупреждение: стоп не блокируется, но РП его видит
+        self.edit_claim("C-003", verified="human")
+        rc, out, err = self.hook("stage_gate.py", {"hook_event_name": "Stop", "stop_hook_active": False})
+        self.assertEqual(rc, 0, err)
+        self.assertIn("предупреждениями", out)
+        self.assertIn("C-003", out)
+        # и вместе с блокирующей проблемой
+        self.replace_in("out/comms-strategy.md", "| P-06 | тест сообщения |", "| P-06 | обещание |")
+        rc, out, err = self.hook("stage_gate.py", {"hook_event_name": "Stop", "stop_hook_active": False})
+        self.assertEqual(rc, 2)
+        self.assertIn("Предупреждения", err)
+
     def test_stage_gate_intake_skips(self):
         t = json.loads((self.proj / "state" / "task.json").read_text())
         t["stage"] = "intake"

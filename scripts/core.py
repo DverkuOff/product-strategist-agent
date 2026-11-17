@@ -211,7 +211,7 @@ def extract_numbers(s: str) -> list[str]:
 
 
 SENT_START_RE = re.compile(r"(?:^|[.!?…]\s+|\n\s*[-*•]?\s*)$")
-WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\-]*")
+WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9]*")
 
 
 # Служебные слова, с которых часто начинается предложение: их не считаем именами.
@@ -427,3 +427,96 @@ def plan_approved(proj: Path) -> bool:
         return False
     sha = plan_sha(plan)
     return any(r.get("type") == "plan_approved" and r.get("plan_sha") == sha for r in human_records(proj))
+
+
+# ---------- величины: масштаб, проценты, даты (для verify_claims) ----------
+
+MONTHS = {"январ": 1, "феврал": 2, "март": 3, "апрел": 4, "ма": 5, "июн": 6, "июл": 7, "август": 8,
+          "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12}
+_MONTH_RX = r"(январ[яь]|феврал[яь]|марта?|апрел[яь]|ма[яй]|июн[яь]|июл[яь]|августа?|сентябр[яь]|октябр[яь]|ноябр[яь]|декабр[яь])"
+DATE_NUM_RE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)")
+DATE_WORD_RE = re.compile(rf"(?<!\d)(\d{{1,2}})\s+{_MONTH_RX}\s+(\d{{4}})", re.I)
+SCALE = {"тыс": 1e3, "тысяч": 1e3, "млн": 1e6, "миллион": 1e6, "млрд": 1e9, "миллиард": 1e9, "трлн": 1e12, "триллион": 1e12}
+QTY_RE = re.compile(
+    r"(?<![\d.,])(\d{1,3}(?:[    ]\d{3})+|\d+)(?:[.,](\d+))?(?![\d])"
+    r"(?:\s*(%|процент\w*)|\s*(тыс\w*|млн|миллион\w*|млрд|миллиард\w*|трлн|триллион\w*)\.?)?", re.I)
+
+
+def _month_num(word: str) -> int:
+    w = word.lower()
+    for stem_, n in sorted(MONTHS.items(), key=lambda x: -len(x[0])):
+        if w.startswith(stem_):
+            return n
+    return 0
+
+
+def extract_dates(text: str) -> list[str]:
+    out = []
+    for m in DATE_NUM_RE.finditer(text):
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= d <= 31 and 1 <= mo <= 12:
+            out.append(f"{y:04d}-{mo:02d}-{d:02d}")
+    for m in DATE_WORD_RE.finditer(text):
+        out.append(f"{int(m.group(3)):04d}-{_month_num(m.group(2)):02d}-{int(m.group(1)):02d}")
+    return sorted(set(out), key=out.index)
+
+
+def _strip_dates(text: str) -> str:
+    text = DATE_NUM_RE.sub(lambda m: " " + m.group(3) + " ", text)  # год из даты остаётся числом
+    return DATE_WORD_RE.sub(lambda m: " " + m.group(3) + " ", text)
+
+
+def quantities(text: str) -> list[dict]:
+    """Числа с единицей: {"v": значение, "abs": с учётом масштаба или None, "pct": bool, "raw": текст}."""
+    out = []
+    for m in QTY_RE.finditer(_strip_dates(text)):
+        whole = re.sub(r"[    ]", "", m.group(1))
+        v = float(f"{whole}.{m.group(2)}" if m.group(2) else whole)
+        pct = bool(m.group(3))
+        scale = None
+        if m.group(4):
+            key = next((k for k in sorted(SCALE, key=len, reverse=True) if m.group(4).lower().startswith(k)), None)
+            scale = SCALE.get(key)
+        out.append({"v": v, "abs": v * scale if scale else None, "pct": pct, "raw": m.group(0).strip()})
+    return out
+
+
+def _qty_match(q: dict, s: dict) -> bool:
+    if q["pct"] != s["pct"]:
+        return False
+    qa, sa = q["abs"] or q["v"], s["abs"] or s["v"]
+    if q["abs"] is not None or s["abs"] is not None:
+        return abs(qa - sa) <= 1e-9 * max(1.0, abs(qa)) or (q["abs"] is None and abs(q["v"] - s["v"]) < 1e-9)
+    return abs(q["v"] - s["v"]) < 1e-9
+
+
+def missing_quantities(claim: str, evidence: str) -> list[str]:
+    """Числа и даты утверждения, которых нет в тексте-основании (с учётом масштаба, % и формата дат)."""
+    miss = []
+    ev_dates = set(extract_dates(evidence))
+    for d in extract_dates(claim):
+        if d not in ev_dates:
+            miss.append(d)
+    ev = quantities(evidence)
+    for q in quantities(claim):
+        if not any(_qty_match(q, s) for s in ev):
+            miss.append(q["raw"])
+    return miss
+
+
+def same_quantity(a: str, b: str) -> bool:
+    qa, qb = quantities(a), quantities(b)
+    return bool(qa) and all(any(_qty_match(x, y) for y in qb) for x in qa)
+
+
+def name_found(word: str, text_norm: str) -> bool:
+    """Имя в тексте целым словом: основа не короче 4 букв и окончание не длиннее 2 букв сверх отрезанного."""
+    w = norm_text(word)
+    if re.search(r"\d", w):
+        return re.search(rf"(?<![\w]){re.escape(w)}(?![\w])", text_norm) is not None
+    if len(w) <= 4:  # короткие имена склоняются целиком: Ева/Еву/Евы, Иван/Ивана
+        st = w[:-1] if len(w) >= 3 else w
+    else:
+        st = w[: max(4, len(w) - 2)]
+    extra = len(w) - len(st) + 2
+    return re.search(rf"(?<![^\W\d_]){re.escape(st)}[^\W\d_]{{0,{extra}}}(?![^\W\d_])", text_norm) is not None

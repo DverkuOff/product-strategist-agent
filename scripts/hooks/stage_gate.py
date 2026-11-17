@@ -23,8 +23,10 @@ CLAIM_STAGES = {"research", "options", "strategy", "validation", "done"}
 PROMISE_STAGES = {"strategy", "validation", "done"}
 
 
-def run(proj) -> list[str]:
+def run(proj) -> tuple[list[str], list[str]]:
+    """(проблемы, которые блокируют стоп; предупреждения, которые показываем РП и агенту)."""
     problems: list[str] = []
+    warnings: list[str] = []
     stage = core.load_task(proj).get("stage", "intake")
     claims_file = proj / "state" / "claims.jsonl"
     if stage in CLAIM_STAGES and claims_file.exists() and claims_file.stat().st_size > 0:
@@ -33,6 +35,7 @@ def run(proj) -> list[str]:
         for cid, _, detail in rep["downgrade"]:
             problems.append(f"{cid} понижен до гипотезы ({detail}) — поправь формулировку и метку в out/")
         problems.extend(f"claims: {e}" for e in rep["errors"])
+        warnings.extend(f"claims: {w}" for w in rep["warnings"])
         if n:
             core.append_journal(proj, f"Stop-хук: понижено {n} утвержд. до гипотез")
     if stage in CLAIM_STAGES and stage != "research":
@@ -41,13 +44,15 @@ def run(proj) -> list[str]:
         problems.extend(f"решения: {e}" for e in derrs)
         decision_lint.apply_downgrades(proj, downs)
         problems.extend(f"решение {d}: вердикт «делать» понижен до «нужна ясность» ({why})" for d, why in downs)
+        warnings.extend(f"варианты: {w}" for w in decision_lint.option_warnings(proj))
     if stage in PROMISE_STAGES and (proj / "out" / "comms-strategy.md").exists():
         rep = promise_lint.lint(proj)
         for pr in rep["promises"]:
             for code, msg in pr["issues"]:
                 problems.append(f"обещание {pr['id']} «{pr['text'][:60]}»: {code} {msg}")
         problems.extend(f"обещания: {e}" for e in rep["errors"])
-    return problems
+        warnings.extend(f"обещания: {w}" for w in rep["warnings"])
+    return problems, warnings
 
 
 def main() -> int:
@@ -56,12 +61,16 @@ def main() -> int:
     proj = core.project_path(None, r)
     if not proj:
         return 0
-    problems = run(proj)
+    problems, warnings = run(proj)
+    warn_text = ("\nПредупреждения (не блокируют, но проверь):\n- " + "\n- ".join(warnings[:10])) if warnings else ""
     if not problems:
+        if warnings:
+            emit({"systemMessage": "Ворота качества пройдены с предупреждениями:" + warn_text.split(":", 1)[1]})
         return 0
     head = "Ворота качества не пройдены:\n- " + "\n- ".join(problems[:15])
     if len(problems) > 15:
         head += f"\n… и ещё {len(problems) - 15}"
+    head += warn_text
     if inp.get("stop_hook_active"):
         core.append_journal(proj, f"Stop-хук: ход завершён с {len(problems)} незакрытыми замечаниями")
         emit({"systemMessage": head + "\n(Агент уже пытался исправить; замечания остаются — проверь вручную: python3 scripts/verify_claims.py, python3 scripts/promise_lint.py)"})
