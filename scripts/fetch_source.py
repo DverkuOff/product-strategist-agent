@@ -2,6 +2,8 @@
 """Сохранить источник как снимок в materials/ активной задачи.
 
 Снимок — Markdown с frontmatter: id, title, url, retrieved_at, sha256, kind, trust: untrusted.
+Снимок неизменяем: sha256 файла записывается в materials/MANIFEST.json, verify_claims сверяет его,
+PreToolUse-хук запрещает агенту править materials/ (идея pm-brain: immutable source/).
 Скрипт печатает только путь и размер, но не содержимое: текст источника попадает в контекст
 модели лишь через субагента source-reader (карантин от prompt injection).
 
@@ -158,12 +160,15 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
     out = proj / "materials" / fname
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(f"---\n{front}\n---\n\n{text.strip()}\n", encoding="utf-8")
+    core.manifest_add(proj, mid, out)  # снимок неизменяем: verify_claims сверяет sha256 с манифестом
     return out
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("source", help="URL или путь к файлу")
+    ap.add_argument("source", nargs="?", help="URL или путь к файлу")
+    ap.add_argument("--rebuild-manifest", action="store_true",
+                    help="сопровождающему: записать текущие sha256 всех снимков в materials/MANIFEST.json")
     ap.add_argument("--title", default="")
     ap.add_argument("--kind", default=None, choices=["web", "document", "table", "interview", "synthetic"])
     ap.add_argument("--note", default="")
@@ -177,6 +182,13 @@ def main(argv=None) -> int:
     if not proj:
         print("Нет активной задачи: python3 scripts/project.py new ...", file=sys.stderr)
         return 2
+    if args.rebuild_manifest:
+        for mid, m in core.list_materials(proj).items():
+            core.manifest_add(proj, mid, m["path"])
+        print(f"Манифест пересобран: {len(core.list_materials(proj))} снимков")
+        return 0
+    if not args.source:
+        ap.error("нужен URL или путь к файлу")
     stage = core.load_task(proj).get("stage")
     plan = core.read_json(proj / "state" / "research-plan.json", None)
     if stage == "research" and not (plan and plan.get("approved")) and not args.no_plan:

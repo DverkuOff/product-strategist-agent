@@ -98,3 +98,41 @@ class VerifyClaims(TempRepoCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImmutableSnapshots(TempRepoCase):
+    def test_manifest_clean(self):
+        import core
+        self.assertEqual(core.manifest_check(self.proj), ({}, []))
+
+    def test_edited_snapshot_is_error_and_downgrades_facts(self):
+        snap = sorted((self.proj / "materials").glob("M-03-*.md"))[0]
+        snap.write_text(snap.read_text(encoding="utf-8").replace("порядка 10%", "порядка 50%"), encoding="utf-8")
+        rep = verify_claims.check(self.proj)
+        self.assertTrue(any("M-03: снимок изменён" in e for e in rep["errors"]))
+        reasons = {d[0]: d[1] for d in rep["downgrade"]}
+        self.assertEqual(reasons.get("C-002"), "snapshot_changed")
+        self.assertEqual(reasons.get("C-004"), "snapshot_changed")
+
+    def test_deleted_snapshot(self):
+        sorted((self.proj / "materials").glob("M-05-*.md"))[0].unlink()
+        rep = verify_claims.check(self.proj)
+        self.assertTrue(any("M-05: снимок удалён" in e for e in rep["errors"]))
+
+    def test_snapshot_outside_manifest_is_warning(self):
+        (self.proj / "materials" / "M-30-manual.md").write_text("---\nid: M-30\n---\n\nтекст\n", encoding="utf-8")
+        rep = verify_claims.check(self.proj)
+        self.assertTrue(any("M-30" in w and "MANIFEST" in w for w in rep["warnings"]))
+
+    def test_fetch_source_adds_to_manifest(self):
+        import io
+        from contextlib import redirect_stdout
+        import core
+        import fetch_source
+        src = self.tmp / "x.md"
+        src.write_text("новый материал " * 30, encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            fetch_source.main([str(src)])
+        data = core.read_json(self.proj / "materials" / core.MANIFEST, {})
+        self.assertIn("M-12", data)
+        self.assertEqual(core.manifest_check(self.proj), ({}, []))

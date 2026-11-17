@@ -340,3 +340,37 @@ def log_research(proj: Path, action: str, what: str, result: str = "") -> None:
     stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     with f.open("a", encoding="utf-8") as fh:
         fh.write(f"| {stamp} | {RESEARCH_ACTIONS.get(action, action)} | {clean(what)} | {clean(result)} |\n")
+
+
+# ---------- неизменяемые снимки (materials/MANIFEST.json) ----------
+
+MANIFEST = "MANIFEST.json"
+
+
+def file_sha256(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def manifest_add(proj: Path, mid: str, path: Path) -> None:
+    f = proj / "materials" / MANIFEST
+    data = read_json(f, {}) or {}
+    data[mid] = {"file": Path(path).name, "sha256": file_sha256(path), "saved_at": now_iso()}
+    write_json(f, dict(sorted(data.items())))
+
+
+def manifest_check(proj: Path) -> tuple[dict[str, str], list[str]]:
+    """({M-id: что не так} для изменённых или пропавших снимков, [M-id снимков вне манифеста])."""
+    data = read_json(proj / "materials" / MANIFEST, None)
+    if data is None:
+        return {}, []
+    bad = {}
+    for mid, e in data.items():
+        p = proj / "materials" / e["file"]
+        if not p.exists():
+            bad[mid] = "снимок удалён"
+        elif file_sha256(p) != e["sha256"]:
+            bad[mid] = "снимок изменён после сохранения (sha256 не совпадает с манифестом)"
+    unlisted = [mid for mid in list_materials(proj) if mid not in data]
+    return bad, unlisted

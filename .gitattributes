@@ -1,0 +1,4 @@
+# Снимки источников неизменяемы: sha256 в materials/MANIFEST.json считается по байтам файла,
+# поэтому git не должен менять переводы строк при checkout (Windows, autocrlf).
+projects/**/materials/** -text
+tests/fixtures/**/materials/** -text

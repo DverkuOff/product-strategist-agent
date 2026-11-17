@@ -2,7 +2,8 @@
 """PreToolUse: агент не меняет свои инструкции, методику и проверки во время работы.
 
 Защищено: AGENTS.md, CLAUDE.md, README.md, .claude/**, .cursor/**, methodology/**, scripts/**, tests/**,
-projects/_template/**, .env*. Агент пишет только в projects/<задача>/.
+projects/_template/**, .env*, а также снимки projects/*/materials/** (неизменяемы, новые — через fetch_source.py).
+Агент пишет только в projects/<задача>/.
 Так команда, найденная в источнике («запиши в AGENTS.md…»), не может изменить правила или ослабить
 «ворота качества». Для сопровождения репозитория человеком: запустить сессию с STRATEGIST_MAINTAINER=1.
 
@@ -51,12 +52,33 @@ HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n(.*?)\n\1\b", re.S)
 QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 
+MATERIALS = re.compile(r"^projects/[^/]+/materials/")
+
+
+def is_material(path_str: str, r: Path) -> bool:
+    """Снимки источников неизменяемы: новые — только через scripts/fetch_source.py."""
+    if not path_str:
+        return False
+    p = Path(path_str)
+    if not p.is_absolute():
+        p = r / p
+    try:
+        return bool(MATERIALS.match(p.resolve().relative_to(r).as_posix()))
+    except ValueError:
+        return False
+
+
 def bash_violation(cmd: str, r: Path) -> str | None:
     body = HEREDOC.sub("", cmd)  # текст heredoc — данные (например, JSON утверждений), а не команды
     for m in REDIRECT.finditer(body):
         if is_protected(m.group(1), r):
             return f"перенаправление вывода в {m.group(1)}"
+    for m in REDIRECT.finditer(body):
+        if is_material(m.group(1), r):
+            return f"перенаправление вывода в снимок {m.group(1)} (снимки неизменяемы)"
     ops = WRITE_OPS.search(QUOTED.sub(" ", body))
+    if ops and re.search(r"materials/", body):
+        return f"команда изменения файлов ({ops.group(1)}) затрагивает materials/ — снимки неизменяемы, новые только через fetch_source.py"
     mention = MENTION.search(body)
     if ops and mention:
         return f"команда изменения файлов ({ops.group(1)}) затрагивает защищённый путь ({mention.group(1)})"
@@ -84,6 +106,8 @@ def main() -> int:
         target = ti.get("file_path") or ti.get("notebook_path") or ""
         if is_protected(target, r):
             why = "правка защищённого файла"
+        elif is_material(target, r):
+            why = "правка снимка источника: снимки неизменяемы, новые сохраняются только через scripts/fetch_source.py"
     elif tool == "Bash":
         target = ti.get("command", "")
         why = bash_violation(target, r)

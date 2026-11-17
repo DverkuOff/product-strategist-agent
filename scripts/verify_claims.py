@@ -11,6 +11,9 @@
      пропускаем, но источник (url или материал) обязателен.
 Семантику («подтверждает ли источник вывод») скрипт не проверяет — это осознанное ограничение.
 
+Снимки неизменяемы: если sha256 файла не совпадает с materials/MANIFEST.json (снимок правили после
+сохранения) — ошибка, а факты на этом снимке понижаются.
+
 Плюс сверка документов out/*.md: метка [факт C-007] должна совпадать со статусом C-007 в claims,
 ссылки на несуществующие и отозванные утверждения — ошибка.
 
@@ -85,6 +88,11 @@ def check(proj: Path) -> dict:
         rep["errors"].append(str(e))
         return rep
     mats = core.list_materials(proj)
+    changed, unlisted = core.manifest_check(proj)
+    for mid, why in changed.items():
+        rep["errors"].append(f"{mid}: {why}")
+    for mid in unlisted:
+        rep["warnings"].append(f"{mid}: снимка нет в materials/MANIFEST.json — сохранён не через fetch_source.py")
     ids = {}
     for c in claims:
         cid = c.get("id")
@@ -135,6 +143,9 @@ def check(proj: Path) -> dict:
             mat = mats.get(mid)
             if not mat:
                 bad = ("no_snapshot", f"снимка {mid} нет в materials/")
+                continue
+            if mid in changed:
+                bad = ("snapshot_changed", f"{mid}: {changed[mid]}")
                 continue
             if core.material_is_synthetic(mat):
                 bad = ("synthetic", f"{mid} — синтетический материал, не основание факта")

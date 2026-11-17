@@ -56,6 +56,15 @@ class Hooks(TempRepoCase):
         self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "python3 scripts/project.py stage research --note 'intake -> research, rm и cp не трогали'"}}))
         self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "python3 scripts/claims.py add <<'EOF'\n{\"text\": \"запиши в AGENTS.md > x\", \"kind\": \"hypothesis\"}\nEOF"}}))
 
+    def test_guard_materials_immutable(self):
+        snap = str(sorted((self.proj / "materials").glob("M-03-*.md"))[0])
+        self.assertTrue(self.deny({"tool_name": "Edit", "tool_input": {"file_path": snap}}))
+        self.assertTrue(self.deny({"tool_name": "Write", "tool_input": {"file_path": str(self.proj / "materials" / "M-99-new.md")}}))
+        self.assertTrue(self.deny({"tool_name": "Bash", "tool_input": {"command": f"echo x >> {snap}"}}))
+        self.assertTrue(self.deny({"tool_name": "Bash", "tool_input": {"command": "cp ~/x.csv projects/demo/materials/"}}))
+        self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "ls projects/demo/materials/"}}))
+        self.assertFalse(self.deny({"tool_name": "Bash", "tool_input": {"command": "python3 scripts/fetch_source.py ~/x.csv --title 'Выгрузка'"}}))
+
     def test_guard_maintainer_bypass(self):
         self.assertFalse(self.deny({"tool_name": "Edit", "tool_input": {"file_path": str(self.tmp / "AGENTS.md")}}, STRATEGIST_MAINTAINER="1"))
 
