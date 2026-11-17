@@ -147,7 +147,31 @@ class Hooks(TempRepoCase):
         self.assertAlmostEqual(float(r["cost_usd"]), 0.03)
 
 
+def yaml_plain_scalar_problems(path):
+    """Без PyYAML ловим две частые ошибки frontmatter, из-за которых Claude Code грузит скилл без полей:
+    «: » внутри незакавыченного значения и значение, которое начинается с кавычки, но ею не заканчивается."""
+    import re
+    text = path.read_text(encoding="utf-8")
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    problems = []
+    for line in m.group(1).splitlines():
+        if not re.match(r"^[A-Za-z_-]+:\s", line):
+            continue
+        value = line.split(":", 1)[1].strip()
+        if value[:1] in "\"'" and not (len(value) > 1 and value[-1] == value[0]):
+            problems.append(line)
+        elif value[:1] not in "\"'[{" and ": " in value:
+            problems.append(line)
+    return problems
+
+
 class Settings(unittest.TestCase):
+    def test_frontmatter_is_valid_yaml_subset(self):
+        from helpers import REPO
+        files = list((REPO / ".claude" / "skills").glob("*/SKILL.md")) + list((REPO / ".claude" / "agents").glob("*.md"))
+        for f in files:
+            self.assertEqual(yaml_plain_scalar_problems(f), [], f)
+
     def test_settings_valid_and_hooks_exist(self):
         from helpers import REPO
         s = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
@@ -166,6 +190,7 @@ class Settings(unittest.TestCase):
             self.assertEqual(meta.get("name"), name)
             self.assertTrue(meta.get("description"))
         meta, _ = core.parse_frontmatter((REPO / ".claude" / "agents" / "source-reader.md").read_text(encoding="utf-8"))
+        self.assertTrue(meta)
         self.assertEqual(meta["model"], "haiku")
         self.assertNotIn("Write", meta["tools"])
         self.assertNotIn("Bash", meta["tools"])

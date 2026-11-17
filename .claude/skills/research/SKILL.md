@@ -1,7 +1,7 @@
 ---
 name: research
 description: Этап 2 — сбор материалов и исследование. План от вопросов, которые могут изменить решение; снимки источников в materials/; чтение через карантинного субагента source-reader; утверждения со статусами (факт/гипотеза/прогноз) в state/claims.jsonl; конфликты источников и честные пробелы. Используй после подтверждённой постановки.
-when_to_use: этап research в state/task.json; "собери данные", "исследуй", "найди источники"
+when_to_use: этап research в state/task.json; «собери данные», «исследуй», «найди источники»
 allowed-tools: Bash(python3 scripts/*) Read Write Edit Glob Grep WebSearch
 ---
 
