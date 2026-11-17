@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -62,6 +63,31 @@ HUMAN_CANON = [
     re.compile(rf"^python3 scripts/project\.py approve-plan( --note {_ARG})?$"),
 ]
 NO_PROMPT_MODES = {"bypassPermissions", "dontAsk"}
+
+
+# Секреты: .env и ключи не читаются никакой командой (Read-запреты Claude Code не действуют на скрипты
+# и на `grep -r`, это сказано в документации). Рекурсивный поиск — только внутри папок с данными задачи.
+SECRET = re.compile(r"\.env\b|\.env\.|\bid_(rsa|ed25519|ecdsa|dsa)\b|\.ssh\b|\.aws\b|\.netrc\b|\.pem\b|credentials", re.I)
+RECURSIVE = re.compile(r"(^|[;&|]\s*|\s)(grep|egrep|fgrep)\s[^;&|]*?-\w*[rR]|(^|[;&|]\s*|\s)(rg|ag|ack)\b")
+SAFE_SEARCH_ROOTS = ("projects/", "methodology/", "docs/")
+
+
+def secret_violation(cmd: str) -> str | None:
+    if SECRET.search(cmd):
+        return "команда упоминает файл с секретами (.env, ключи, ~/.ssh, ~/.aws) — агент их не читает и не копирует"
+    for seg in re.split(r"&&|\|\||;|\||\n", cmd):
+        if not RECURSIVE.search(" " + seg.strip()):
+            continue
+        try:
+            words = shlex.split(seg)
+        except ValueError:
+            words = seg.split()
+        args = [a for a in words[1:] if not a.startswith("-")]
+        paths = args[1:]  # первый неопциональный аргумент — шаблон поиска
+        if not paths or not all(a.casefold().startswith(SAFE_SEARCH_ROOTS) for a in paths):
+            return ("рекурсивный поиск вне projects/, methodology/, docs/ может прочитать .env — "
+                    "укажи папку задачи или используй встроенный инструмент Grep")
+    return None
 
 
 def human_command_violation(cmd: str, mode: str) -> str | None:
@@ -137,7 +163,7 @@ def main() -> int:
                    "только scripts/fetch_source.py, inbox/ наполняет РП, state/human.jsonl пишут команды РП")
     elif tool == "Bash":
         target = ti.get("command", "")
-        why = human_command_violation(target, inp.get("permission_mode", "default"))
+        why = secret_violation(target) or human_command_violation(target, inp.get("permission_mode", "default"))
         if not why and not HUMAN_CMD.search(target):
             why = bash_violation(target, r)
     if not why:
