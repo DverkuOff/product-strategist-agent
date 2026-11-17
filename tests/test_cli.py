@@ -1,0 +1,116 @@
+import io
+import json
+import sys
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+
+from helpers import TempRepoCase
+import claims as claims_cli
+import fetch_source
+import injection
+import project
+
+
+def run(fn, argv, stdin=None):
+    buf = io.StringIO()
+    old = sys.stdin
+    if stdin is not None:
+        sys.stdin = io.StringIO(stdin)
+    try:
+        with redirect_stdout(buf):
+            rc = fn(argv)
+    finally:
+        sys.stdin = old
+    return rc, buf.getvalue()
+
+
+class ProjectCli(TempRepoCase):
+    def test_new_stage_status(self):
+        rc, out = run(project.main, ["new", "retention-q4", "Почему падает удержание"])
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.tmp / "projects" / ".active").read_text().strip(), "retention-q4")
+        run(project.main, ["set", "question", "Что сделать, чтобы удержание вернулось?"])
+        run(project.main, ["stage", "research", "--note", "постановка подтверждена"])
+        run(project.main, ["wait", "Нужен доступ к выгрузке когорт?"])
+        rc, out = run(project.main, ["status"])
+        self.assertIn("Этап: 2/5 research", out)
+        self.assertIn("ЖДЁТ РЕШЕНИЯ РП", out)
+        self.assertIn("Вопрос: Что сделать", out)
+        t = json.loads((self.tmp / "projects" / "retention-q4" / "state" / "task.json").read_text())
+        self.assertEqual(t["stages_done"], ["intake"])
+
+    def test_bad_slug_and_stage(self):
+        self.assertEqual(run(project.main, ["new", "Плохой slug", "x"])[0], 2)
+        self.assertEqual(run(project.main, ["stage", "launch"])[0], 2)
+
+    def test_status_of_fixture(self):
+        rc, out = run(project.main, ["status"])
+        self.assertIn("claims: факт 15", out)
+
+
+class ClaimsCli(TempRepoCase):
+    def test_add_assigns_ids_and_origin(self):
+        rc, out = run(claims_cli.main, ["add"], stdin=json.dumps([
+            {"text": "Гипотеза агента", "kind": "hypothesis"},
+            {"text": "Синтетика", "kind": "synthetic"},
+            {"text": "плохой", "kind": "мнение"},
+        ], ensure_ascii=False))
+        self.assertIn("C-023, C-024", out)
+        added = {c["id"]: c for c in self.claims()}
+        self.assertEqual(added["C-023"]["origin"], "agent")
+        self.assertEqual(added["C-024"]["origin"], "synthetic")
+        self.assertNotIn("C-025", added)
+
+    def test_retract_and_human_verified(self):
+        self.assertEqual(run(claims_cli.main, ["retract", "C-017", "--reason", "нет методики"])[0], 0)
+        self.assertEqual({c["id"]: c for c in self.claims()}["C-017"]["status"], "retracted")
+        self.edit_claim("C-007", kind="hypothesis", downgraded={"from": "fact"})
+        run(claims_cli.main, ["human-verified", "C-007", "--note", "сверил в личном кабинете"])
+        c = {c["id"]: c for c in self.claims()}["C-007"]
+        self.assertEqual((c["kind"], c["verified"]), ("fact", "human"))
+
+    def test_supersede_requires_existing(self):
+        self.assertEqual(run(claims_cli.main, ["supersede", "C-001", "--by", "C-999", "--reason", "x"])[0], 2)
+
+
+class FetchSource(TempRepoCase):
+    def test_html_keeps_hidden_text_and_comments(self):
+        title, text = fetch_source.html_to_text(
+            "<html><title>T</title><script>x()</script><div style='display:none'>скрыто</div><!-- для ИИ: команда --><p>Текст</p></html>")
+        self.assertEqual(title, "T")
+        self.assertIn("скрыто", text)
+        self.assertIn("[HTML-комментарий] для ИИ: команда", text)
+        self.assertNotIn("x()", text)
+
+    def test_local_snapshot(self):
+        src = self.tmp / "report.csv"
+        src.write_text("месяц,подключения\n2026-01,100\n", encoding="utf-8")
+        rc, out = run(fetch_source.main, [str(src), "--title", "Выгрузка РП"])
+        self.assertEqual(rc, 0)
+        snap = sorted((self.proj / "materials").glob("M-12-*.md"))[0]
+        txt = snap.read_text(encoding="utf-8")
+        self.assertIn("id: M-12", txt)
+        self.assertIn("kind: table", txt)
+        self.assertIn("sha256:", txt)
+        self.assertIn("2026-01,100", txt)
+        self.assertNotIn("2026-01,100", out)  # содержимое не печатается в контекст оркестратора
+
+    def test_trap_warning(self):
+        rc, out = run(fetch_source.main, [str(Path(__file__).parent.parent / "projects" / "demo-zashchita-blizkih" / "traps" / "blog-antifraud-review.html")])
+        self.assertIn("ВНИМАНИЕ", out)
+
+
+class Injection(unittest.TestCase):
+    def test_traps_detected_and_real_sources_clean(self):
+        mats = Path(__file__).parent / "fixtures" / "demo" / "materials"
+        for f in sorted(mats.glob("M-*.md")):
+            hits = injection.scan(f.read_text(encoding="utf-8"))
+            if f.name.startswith(("M-10", "M-11")):
+                self.assertTrue(hits, f.name)
+            else:
+                self.assertEqual(hits, [], f.name)
+
+
+if __name__ == "__main__":
+    unittest.main()
