@@ -68,7 +68,7 @@ class Decisions(TempRepoCase):
 
     def test_do_with_unsupported_variant_is_downgraded(self):
         # вариант B без меток утверждений — не проработан
-        self.replace_in("out/options.md", "[гипотеза C-018]; покупатель — взрослый ребёнок [факт C-004].", "незнание; покупатель — взрослый ребёнок.")
+        self.replace_in("out/options.md", "незнание о функции [гипотеза C-018]; среди подключивших много мужчин 31–45 лет [факт C-004],", "незнание о функции; среди подключивших много мужчин 31–45 лет,")
         _, downs = decision_lint.check_decisions(self.proj)
         self.assertTrue(downs and "нет опоры" in downs[0][1])
 
@@ -83,3 +83,26 @@ class Decisions(TempRepoCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Critic(TempRepoCase):
+    def test_fixture_has_answered_critique(self):
+        self.assertEqual(decision_lint.option_warnings(self.proj), [])
+
+    def test_missing_critique_section_warns(self):
+        self.replace_in("out/options.md", "## Возражения критика", "## Прочее")
+        self.assertTrue(decision_lint.option_warnings(self.proj)[0].startswith("O6"))
+
+    def test_strong_objection_without_answer_warns(self):
+        self.replace_in("out/options.md", "| принято: в T-01 добавлен замер шага подтверждения |", "| |")
+        w = decision_lint.option_warnings(self.proj)
+        self.assertTrue(w and w[0].startswith("O7 сильное возражение к варианту B"))
+
+    def test_critic_agent_definition(self):
+        from helpers import REPO
+        import core
+        meta, body = core.parse_frontmatter((REPO / ".claude" / "agents" / "critic.md").read_text(encoding="utf-8"))
+        self.assertEqual(meta["name"], "critic")
+        for tool in ("Write", "Edit", "Bash", "WebFetch"):
+            self.assertNotIn(tool, meta["tools"])
+        self.assertIn("## Возражения критика", body)

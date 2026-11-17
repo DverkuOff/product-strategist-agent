@@ -10,6 +10,7 @@ state/decisions.md (для действующих решений):
   D1 нет вердикта «делать / нужна ясность / стоп» с причиной после «—»;
   D2 нет поля «Что заставит пересмотреть» (kill-критерии; идея pm-brain «what would reopen them»);
      на этапах validation и done заглушка «будут в плане проверки» уже не годится;
+  O6/O7 (предупреждения) нет раздела «Возражения критика» от субагента critic или сильное возражение без ответа автора;
   D3 вердикт «делать» без проработанного варианта (вариант из options.md с условиями «должно быть правдой»,
      возражениями и метками утверждений) и без оснований → понижается до «нужна ясность» (--fix пишет в файл).
 
@@ -86,6 +87,23 @@ def check_options(proj: Path) -> list[str]:
         if not re.search(r"возражени|провал\w*,? потому что", v["body"], re.I):
             errs.append(f"O5 вариант {k}: нет сильных возражений")
     return errs
+
+
+def option_warnings(proj: Path) -> list[str]:
+    """Не блокирующие замечания: критика вариантов (субагент critic) и ответы автора на сильные возражения."""
+    f = proj / "out" / "options.md"
+    if not f.exists():
+        return []
+    md = f.read_text(encoding="utf-8")
+    m = re.search(r"^##\s+Возражения критика.*?(?=^##\s(?!#)|\Z)", md, re.M | re.S)
+    if not m:
+        return ["O6 options.md: нет раздела «Возражения критика» — вызови субагента critic (скилл options, шаг 5)"]
+    warns = []
+    for row in m.group(0).splitlines():
+        cells = [c.strip() for c in row.strip().strip("|").split("|")] if row.strip().startswith("|") else []
+        if len(cells) >= 6 and cells[3].lower() == "высокая" and not cells[5]:
+            warns.append(f"O7 сильное возражение к варианту {cells[0]} без ответа автора: «{cells[1][:70]}»")
+    return warns
 
 
 def field(d: dict, *names: str) -> str:
@@ -170,6 +188,8 @@ def main(argv=None) -> int:
         apply_downgrades(proj, downs)
     for e in errs:
         print(f"  ✗ {e}")
+    for w in option_warnings(proj):
+        print(f"  ! {w}")
     for did, why in downs:
         print(f"  ↓ {did}: «делать» → «нужна ясность»{'' if args.fix else ' (--fix)'}: {why}")
     if not errs and not downs:
