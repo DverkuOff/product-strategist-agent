@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Stop / SubagentStop: записать стоимость в state/cost-ledger.csv активной задачи.
+"""Stop / SubagentStop / SessionEnd / SessionStart: записать стоимость в state/cost-ledger.csv активной задачи.
 
 Токены берутся из транскрипта Claude Code (JSONL; usage у сообщений ассистента, дубли по message.id
 отбрасываются), стоимость — по прейскуранту Claude API (core.PRICES). На подписке это оценка,
 а не счёт. Запись дельтой: строка = прирост токенов с прошлой записи по (сессия, агент, модель)
 с этапом задачи на момент записи — так видно, сколько стоил каждый этап.
+
+Транскрипт пишется асинхронно: в момент Stop последний ответ может быть ещё не записан. Поэтому
+(1) хук немного ждёт, пока файл перестанет расти; (2) пути транскриптов запоминаются в
+state/.cost-sessions.json, и на SessionEnd и следующем SessionStart недостающее досчитывается.
 """
 from __future__ import annotations
 
 import csv
 import json
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -86,14 +91,55 @@ def record(proj: Path, session: str, agent: str, totals: dict[str, dict]) -> int
     return len(new)
 
 
+SESSIONS_FILE = ".cost-sessions.json"
+
+
+def remember(proj: Path, session: str, agent: str, tp: str, main_only: bool) -> None:
+    f = proj / "state" / SESSIONS_FILE
+    data = core.read_json(f, {}) or {}
+    data[f"{session}|{agent}"] = {"session": session, "agent": agent, "transcript": tp, "main_only": main_only}
+    core.write_json(f, data)
+
+
+def wait_for_flush(path: Path, max_wait: float = 2.5, step: float = 0.25) -> None:
+    """Подождать, пока транскрипт перестанет расти (дозапись последнего ответа)."""
+    last, stable, waited = -1, 0, 0.0
+    while waited < max_wait:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return
+        stable = stable + 1 if size == last else 0
+        if stable >= 2:
+            return
+        last = size
+        time.sleep(step)
+        waited += step
+
+
+def reconcile(proj: Path) -> int:
+    """Досчитать все запомненные сессии (только недостающая дельта)."""
+    data = core.read_json(proj / "state" / SESSIONS_FILE, {}) or {}
+    n = 0
+    for e in data.values():
+        p = Path(e["transcript"]).expanduser()
+        if p.exists():
+            n += record(proj, e["session"], e["agent"], totals_from_transcript(p, e.get("main_only", True)))
+    return n
+
+
 def main() -> int:
     inp = read_input()
     r = root(inp)
     proj = core.project_path(None, r)
     if not proj:
         return 0
+    event = inp.get("hook_event_name", "Stop")
+    if event in {"SessionEnd", "SessionStart"}:
+        reconcile(proj)
+        return 0
     session = inp.get("session_id", "unknown")
-    if inp.get("hook_event_name") == "SubagentStop":
+    if event == "SubagentStop":
         tp = inp.get("agent_transcript_path")
         agent = f"{inp.get('agent_type', 'subagent')}:{inp.get('agent_id', '')}"
         main_only = False
@@ -103,8 +149,11 @@ def main() -> int:
         main_only = True
     if not tp:
         return 0
-    totals = totals_from_transcript(Path(tp).expanduser(), main_only)
-    record(proj, session, agent, totals)
+    path = Path(tp).expanduser()
+    remember(proj, session, agent, str(path), main_only)
+    if not inp.get("_no_wait"):
+        wait_for_flush(path)
+    record(proj, session, agent, totals_from_transcript(path, main_only))
     return 0
 
 

@@ -136,6 +136,20 @@ class Hooks(TempRepoCase):
         self.assertAlmostEqual(float(rows[1]["cost_usd"]), 1.0)
         self.assertEqual(int(rows[1]["input_tokens"]), 0)
 
+    def test_cost_ledger_late_flush_reconciled_on_session_end(self):
+        # Транскрипт пишется асинхронно: на Stop последнего ответа ещё нет — досчитываем на SessionEnd/SessionStart
+        msg = lambda mid, out: {"type": "assistant", "message": {"id": mid, "model": "claude-sonnet-5-5",
+                                                                 "usage": {"input_tokens": 0, "output_tokens": out}}}
+        tp = self.transcript("late.jsonl", [msg("m1", 100_000)])
+        self.hook("cost_ledger.py", {"hook_event_name": "Stop", "session_id": "s2", "transcript_path": tp, "_no_wait": True})
+        with open(tp, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(msg("m2", 200_000)) + "\n")
+        self.hook("cost_ledger.py", {"hook_event_name": "SessionEnd", "session_id": "s2"})
+        import core
+        self.assertAlmostEqual(core.ledger_total(self.proj), 3.0)
+        self.hook("cost_ledger.py", {"hook_event_name": "SessionStart", "session_id": "s3"})
+        self.assertAlmostEqual(core.ledger_total(self.proj), 3.0)  # повторный досчёт не дублирует
+
     def test_cost_ledger_subagent(self):
         tp = self.transcript("agent.jsonl", [{"type": "assistant", "message": {"id": "a1", "model": "claude-haiku-5-5",
                                                                               "usage": {"input_tokens": 200_000, "output_tokens": 20_000}}}])
