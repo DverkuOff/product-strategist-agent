@@ -2,6 +2,8 @@
 """Stop: «ворота качества» перед тем, как агент отдаст ход руководителю продукта.
 
 - этапы research и дальше: verify_claims (факт без снимка → гипотеза, метки в out/ согласованы);
+- этапы options и дальше: decision_lint (≥3 вариантов, «Цена бездействия», вердикт с причиной, «Что заставит пересмотреть»;
+  «делать» без проработанного варианта → «нужна ясность»);
 - этапы strategy и дальше, если есть out/comms-strategy.md: promise_lint (обещания опираются на свойства-факты).
 Нашли проблему → exit 2: Claude Code не завершает ход и передаёт агенту текст ошибок (stderr).
 Повторный стоп подряд (stop_hook_active) не блокируем, а показываем предупреждение РП — без бесконечного цикла.
@@ -13,6 +15,7 @@ import sys
 from _hook import emit, read_input, root
 
 import core  # noqa: E402
+import decision_lint  # noqa: E402
 import promise_lint  # noqa: E402
 import verify_claims  # noqa: E402
 
@@ -32,6 +35,12 @@ def run(proj) -> list[str]:
         problems.extend(f"claims: {e}" for e in rep["errors"])
         if n:
             core.append_journal(proj, f"Stop-хук: понижено {n} утвержд. до гипотез")
+    if stage in CLAIM_STAGES and stage != "research":
+        problems.extend(f"варианты: {e}" for e in decision_lint.check_options(proj))
+        derrs, downs = decision_lint.check_decisions(proj)
+        problems.extend(f"решения: {e}" for e in derrs)
+        decision_lint.apply_downgrades(proj, downs)
+        problems.extend(f"решение {d}: вердикт «делать» понижен до «нужна ясность» ({why})" for d, why in downs)
     if stage in PROMISE_STAGES and (proj / "out" / "comms-strategy.md").exists():
         rep = promise_lint.lint(proj)
         for pr in rep["promises"]:

@@ -97,6 +97,12 @@ class Hooks(TempRepoCase):
         self.assertIn("C-009 понижен до гипотезы", err)
         self.assertEqual({c["id"]: c for c in self.claims()}["C-009"]["kind"], "hypothesis")
 
+    def test_stage_gate_checks_decisions(self):
+        self.replace_in("out/options.md", "**Цена бездействия:**", "**Прогноз:**")
+        rc, out, err = self.hook("stage_gate.py", {"hook_event_name": "Stop", "stop_hook_active": False})
+        self.assertEqual(rc, 2)
+        self.assertIn("Цена бездействия", err)
+
     def test_stage_gate_intake_skips(self):
         t = json.loads((self.proj / "state" / "task.json").read_text())
         t["stage"] = "intake"
