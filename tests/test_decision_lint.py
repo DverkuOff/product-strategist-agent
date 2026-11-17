@@ -18,7 +18,7 @@ class Options(TempRepoCase):
         self.assertIn("O3", codes(decision_lint.check_options(self.proj)))
 
     def test_cost_of_inaction_needs_support(self):
-        self.replace_in("out/options.md", new_line_start := "базовая линия — подключения выросли примерно в 20 раз за год [факт C-001], абсолютная база неизвестна; прогноз без изменений построить не на чем — квартального тренда в открытых данных нет (пробел); цена — подключения тех, кто о функции не знает [гипотеза C-018].", "всё и так растёт.")
+        self.replace_in("out/options.md", "базовая линия — подключения выросли примерно в 20 раз за год [факт C-001], абсолютная база неизвестна; прогноз без изменений построить не на чем — квартального тренда в открытых данных нет (пробел); цена — подключения тех, кто о функции не знает [гипотеза C-018].", "всё и так растёт.")
         errs = decision_lint.check_options(self.proj)
         self.assertTrue(any("без опоры" in e for e in errs))
 
