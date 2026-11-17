@@ -77,7 +77,9 @@ def check(proj: Path, today: dt.date | None = None) -> list[str]:
                 continue
             hit = [x for x in c.get("contradicts", []) or [] if x in d["basis"]]
             if hit:
-                flags.append(f"{d['id']}: новое утверждение-факт {c['id']} противоречит основанию {', '.join(hit)}: «{c.get('text', '')[:80]}»")
+                # текст утверждения не цитируем: он из источника и попадает в сводку SessionStart
+                flags.append(f"{d['id']}: новое утверждение-факт {c['id']} противоречит основанию {', '.join(hit)} "
+                             f"(текст — python3 scripts/claims.py list)")
         if d["revisit_by"]:
             try:
                 due = dt.date.fromisoformat(d["revisit_by"][:10])

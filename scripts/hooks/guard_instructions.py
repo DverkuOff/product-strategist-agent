@@ -18,6 +18,8 @@ Bash и PowerShell разбираются по сегментам (&&, ||, ;, |,
   - интерпретатор со встроенным кодом (python -c, node -e, perl -e, awk …) — отказ, если команда упоминает
     защищённое имя или код пишет и удаляет файлы; скрипты агента `python3 scripts/<известный>.py` — разрешены;
   - любая другая команда, которая упоминает защищённое имя, — отказ, кроме чтения (ls, cat, grep, git log …).
+Оркестратор (главный контекст, во входе хука нет agent_type) не читает содержимое снимков materials/ —
+ни Read, ни Grep, ни cat/grep в Bash: это делает субагент source-reader (карантин). Список файлов (ls, Glob) можно.
 Это эвристика: второй слой для Bash — встроенный sandbox Claude Code с denyWrite на те же пути (.claude/settings.json).
 Для сопровождения репозитория человеком: запустить сессию с STRATEGIST_MAINTAINER=1 (и выключить sandbox в
 settings.local.json).
@@ -313,10 +315,53 @@ def log_block(r: Path, tool: str, target: str, why: str) -> None:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+MATERIALS_RE = re.compile(r"(^|/)projects/[^/]+/materials(/|$)", re.I)
+LIST_ONLY = {"ls", "wc", "stat", "du", "file", "md5", "shasum", "sha256sum", "tree"}
+QUARANTINE = ("текст снимков источников читает только субагент source-reader (карантин): поручи ему чтение "
+              "и получи утверждения в JSON")
+
+
+def in_materials(path_str: str, r: Path, cwd: Path) -> bool:
+    rel = norm_rel(path_str, r, cwd)
+    return bool(rel and MATERIALS_RE.search(rel))
+
+
+def main_thread_read_violation(tool: str, ti: dict, r: Path, cwd: Path) -> str | None:
+    """В главном контексте (во входе хука нет agent_type) оркестратор не читает содержимое снимков."""
+    if tool == "Read":
+        return QUARANTINE if in_materials(ti.get("file_path", ""), r, cwd) else None
+    if tool == "Grep":
+        path = ti.get("path") or str(cwd)
+        rel = norm_rel(path, r, cwd)
+        if rel is None:
+            return None
+        if MATERIALS_RE.search(rel) or rel in ("", ".", "projects") or re.fullmatch(r"projects/[^/]+", rel):
+            return QUARANTINE + "; для поиска по задаче укажи папку out/ или state/"
+        return None
+    if tool in ("Bash", "PowerShell"):
+        cmd = ti.get("command", "")
+        if not re.search(r"materials", cmd, re.I):
+            return None
+        for seg in split_segments(cmd) or [[cmd]]:
+            if not seg or not re.search(r"materials", " ".join(seg), re.I):
+                continue
+            name = os.path.basename(seg[0])
+            if name in LIST_ONLY:
+                continue
+            if name in ("python3", "python") and len(seg) > 1 and re.fullmatch(r"(\./)?scripts/\w+\.py", seg[1]):
+                continue
+            return QUARANTINE
+    return None
+
+
 def decide(inp: dict, r: Path) -> tuple[str | None, str]:
     tool = inp.get("tool_name", "")
     ti = inp.get("tool_input") or {}
     cwd = Path(inp.get("cwd") or r)
+    if not inp.get("agent_type"):
+        why = main_thread_read_violation(tool, ti, r, cwd)
+        if why:
+            return why, ti.get("file_path") or ti.get("path") or ti.get("command", "")
     if tool in {"Write", "Edit", "MultiEdit", "NotebookEdit"}:
         target = ti.get("file_path") or ti.get("notebook_path") or ""
         return protected_reason(norm_rel(target, r, cwd)), target

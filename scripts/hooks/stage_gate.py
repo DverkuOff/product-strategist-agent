@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Stop: «ворота качества» перед тем, как агент отдаст ход руководителю продукта.
 
-- этапы research и дальше: verify_claims (факт без снимка → гипотеза, метки в out/ согласованы);
+- любой этап, если есть утверждения: verify_claims (факт без снимка → гипотеза, метки в out/ согласованы);
 - этапы options и дальше: decision_lint (≥3 вариантов, «Цена бездействия», вердикт с причиной, «Что заставит пересмотреть»;
   «делать» без проработанного варианта → «нужна ясность»);
 - этапы strategy и дальше, если есть out/comms-strategy.md: promise_lint (обещания опираются на свойства-факты).
 Нашли проблему → exit 2: Claude Code не завершает ход и передаёт агенту текст ошибок (stderr).
 Повторный стоп подряд (stop_hook_active) не блокируем, а показываем предупреждение РП — без бесконечного цикла.
+Значит, хук возвращает агента на исправление один раз за ход; незакрытые замечания РП видит в сообщении.
+Сбой самой проверки (битый task.json) — fail-closed: первый стоп блокируется с объяснением.
 """
 from __future__ import annotations
 
@@ -29,7 +31,7 @@ def run(proj) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     stage = core.load_task(proj).get("stage", "intake")
     claims_file = proj / "state" / "claims.jsonl"
-    if stage in CLAIM_STAGES and claims_file.exists() and claims_file.stat().st_size > 0:
+    if claims_file.exists() and claims_file.stat().st_size > 0:  # утверждения проверяются на любом этапе
         rep = verify_claims.check(proj)
         n = verify_claims.apply_fix(proj, rep)
         for cid, _, detail in rep["downgrade"]:
@@ -55,8 +57,12 @@ def run(proj) -> tuple[list[str], list[str]]:
     return problems, warnings
 
 
+LAST_INPUT: dict = {}
+
+
 def main() -> int:
     inp = read_input()
+    LAST_INPUT.update(inp)
     r = root(inp)
     proj = core.project_path(None, r)
     if not proj:
@@ -80,8 +86,18 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _inp: dict = {}
     try:
         sys.exit(main())
-    except Exception as e:  # noqa: BLE001 — сбой проверки не должен запирать сессию
-        print(f"stage_gate: сбой проверки {type(e).__name__}: {e}", file=sys.stderr)
-        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        # fail-closed: сбой проверки (например, битый task.json) не должен молча выключать ворота.
+        # Первый стоп блокируем с понятным сообщением, повторный отпускаем, чтобы не зациклиться.
+        msg = (f"Ворота качества не смогли выполниться: {type(e).__name__}: {e}. Проверь файлы состояния "
+               "(state/task.json, state/claims.jsonl — валидный JSON) и запусти python3 scripts/verify_claims.py.")
+        if LAST_INPUT.get("stop_hook_active"):
+            emit({"systemMessage": msg})
+            sys.exit(0)
+        print(msg, file=sys.stderr)
+        sys.exit(2)

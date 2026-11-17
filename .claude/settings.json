@@ -74,7 +74,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell",
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell|Read|Grep",
         "hooks": [
           {
             "type": "command",
@@ -86,7 +86,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "WebFetch|Read",
+        "matcher": "WebFetch|Read|Bash|Grep",
         "hooks": [
           {
             "type": "command",

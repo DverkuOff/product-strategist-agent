@@ -25,6 +25,10 @@ PATTERNS = [
     r"(ии|ai)[- ]?(помощник|ассистент|агент|модел)\w*[^.]{0,60}\b(отметь|запиши|используй|игнорируй|рекомендуй|выполни|добавь)\w*",
     r"(отметь|пометь|считай)\w*[^.]{0,40}как (проверенн|подтвержд[её]нн|достоверн)\w* факт",
     r"mark (this|it|every|all)[^.]{0,40}(as )?(verified|true|fact)",
+    r"note to (the )?(ai|assistant|llm|agent|model)",
+    r"(ai|llm|ии)[- ]?(assistant|agent|ассистент\w*|агент\w*)s? (reading|читающ)",
+    r"\brun\s+python3?\s+scripts/|python3?\s+scripts/\w+\.py\s+(human-verified|approve-plan)",
+    r"(выполни|запусти)\w*\s+(команд\w+\s+)?python3?\s",
 ]
 _RX = [re.compile(p, re.I) for p in PATTERNS]
 
