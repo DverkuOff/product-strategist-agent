@@ -21,7 +21,10 @@ def summarize(rows: list[dict]) -> dict:
     tokens = defaultdict(int)
     total = 0.0
     times = []
+    unknown = defaultdict(int)
     for r in rows:
+        if (r.get("cost_usd") or "") == "":
+            unknown[r.get("model") or "?"] += 1
         c = float(r.get("cost_usd") or 0)
         total += c
         by["stage"][r.get("stage") or "?"] += c
@@ -34,7 +37,7 @@ def summarize(rows: list[dict]) -> dict:
         except (KeyError, ValueError):
             pass
     sessions = len({r.get("session_id") for r in rows})
-    return {"total": total, "by": by, "tokens": dict(tokens), "sessions": sessions,
+    return {"total": total, "by": by, "tokens": dict(tokens), "sessions": sessions, "unknown": dict(unknown),
             "first": min(times).isoformat() if times else None, "last": max(times).isoformat() if times else None}
 
 
@@ -53,6 +56,9 @@ def render(s: dict, md: bool) -> str:
     out = [f"Стоимость задачи: ${s['total']:.4f} (оценка по прейскуранту Claude API), сессий: {s['sessions']}",
            f"Токены: вход {n('input_tokens')}, запись кэша {n('cache_write_tokens')}, "
            f"чтение кэша {n('cache_read_tokens')}, выход {n('output_tokens')}; веб-поисков {t.get('web_searches', 0)}"]
+    if s.get("unknown"):
+        out.append("ВНИМАНИЕ: цена неизвестна для " + ", ".join(f"{m} ({n} строк)" for m, n in s["unknown"].items())
+                   + " — эти токены в сумму не вошли; добавь модель в core.MODEL_PRICES")
     if s["first"]:
         out.append(f"Период записей: {s['first']} — {s['last']}")
     out.append(table("По этапам", s["by"]["stage"]))

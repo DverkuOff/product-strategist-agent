@@ -186,7 +186,7 @@ class Hooks(TempRepoCase):
         import core
         r = core.read_ledger(self.proj)[0]
         self.assertTrue(r["agent"].startswith("source-reader"))
-        self.assertAlmostEqual(float(r["cost_usd"]), 0.03)
+        self.assertAlmostEqual(float(r["cost_usd"]), 0.15)  # промпт > 100K: тариф Haiku 5.5 $0,50 / $2,50
 
 
 def yaml_plain_scalar_problems(path):

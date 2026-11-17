@@ -38,7 +38,7 @@ class Cost(unittest.TestCase):
         self.assertAlmostEqual(core.usage_cost("claude-opus-5-5", {"input_tokens": 1_000_000, "output_tokens": 1_000_000}), 24.0)
 
     def test_haiku_cheap(self):
-        self.assertAlmostEqual(core.usage_cost("claude-haiku-5-5", {"input_tokens": 1_000_000}), 0.10)
+        self.assertAlmostEqual(core.usage_cost("claude-haiku-5-5", {"input_tokens": 50_000}), 0.005)
 
     def test_cache_write_ttl(self):
         u = {"cache_creation_input_tokens": 2_000_000,
@@ -51,7 +51,7 @@ class Cost(unittest.TestCase):
         self.assertAlmostEqual(core.usage_cost("claude-sonnet-5-5", {"server_tool_use": {"web_search_requests": 3}}), 0.03)
 
     def test_unknown_model_zero(self):
-        self.assertEqual(core.usage_cost("<synthetic>", {"input_tokens": 10}), 0.0)
+        self.assertIsNone(core.usage_cost("<synthetic>", {"input_tokens": 10}))  # неизвестная цена — не $0
 
 
 if __name__ == "__main__":

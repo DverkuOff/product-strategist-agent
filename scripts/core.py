@@ -279,6 +279,34 @@ def numbers_in(text: str) -> set[str]:
 
 # ---------- стоимость ----------
 
+# Цены по точному id модели, $ за 1M токенов: вход, выход, чтение кэша (справочник Claude API, кэш 03.11.2026).
+# У Haiku 5.5 промпт длиннее 100K стоит дороже ($0,50 / $2,50; чтение кэша по той же пропорции — допущение).
+def _p(i, o, cr, **kw):
+    return {"input": i, "output": o, "cache_read": cr, **kw}
+
+
+MODEL_PRICES = {
+    "claude-haiku-5-5": _p(0.10, 0.50, 0.01, long=_p(0.50, 2.50, 0.05, threshold=100_000)),
+    "claude-sonnet-5-5": _p(2.00, 10.00, 0.10),
+    "claude-opus-5-5": _p(4.00, 20.00, 0.20),
+    "claude-fable-5-2": _p(8.00, 40.00, 0.20), "claude-mythos-5-2": _p(8.00, 40.00, 0.20),
+    "claude-fable-5-1": _p(10.00, 50.00, 0.25), "claude-mythos-5-1": _p(10.00, 50.00, 0.25),
+    "claude-fable-5": _p(10.00, 50.00, 1.00), "claude-mythos-5": _p(10.00, 50.00, 1.00),
+    "claude-opus-5": _p(5.00, 25.00, 0.50), "claude-opus-4-8": _p(5.00, 25.00, 0.50),
+    "claude-opus-4-7": _p(5.00, 25.00, 0.50), "claude-opus-4-6": _p(5.00, 25.00, 0.50),
+    "claude-sonnet-5": _p(2.00, 10.00, 0.20), "claude-sonnet-4-6": _p(3.00, 15.00, 0.30),
+    "claude-haiku-4-5": _p(1.00, 5.00, 0.10),
+}
+
+
+def canonical_model(model: str) -> str:
+    m = (model or "").strip().lower()
+    m = re.sub(r"\[.*?\]$", "", m)                 # claude-opus-5-5[1m]
+    m = re.sub(r"^(us\.|eu\.|apac\.|global\.)?anthropic\.", "", m)  # префиксы облачных платформ
+    m = re.sub(r"[-@]\d{8}(-v\d+(:\d+)?)?$", "", m)  # даты снимков
+    return m
+
+
 def model_family(model: str) -> str | None:
     m = (model or "").lower()
     for fam in PRICES:
@@ -287,11 +315,8 @@ def model_family(model: str) -> str | None:
     return None
 
 
-def usage_cost(model: str, usage: dict) -> float:
-    fam = model_family(model)
-    if not fam:
-        return 0.0
-    p = PRICES[fam]
+def usage_cost(model: str, usage: dict) -> float | None:
+    """Стоимость ответа по прейскуранту API; None — цена модели неизвестна (а не $0)."""
     inp = usage.get("input_tokens", 0) or 0
     out = usage.get("output_tokens", 0) or 0
     cr = usage.get("cache_read_input_tokens", 0) or 0
@@ -302,6 +327,11 @@ def usage_cost(model: str, usage: dict) -> float:
     if c1h + c5m == 0:
         c5m = cc
     ws = ((usage.get("server_tool_use") or {}).get("web_search_requests", 0)) or 0
+    p = MODEL_PRICES.get(canonical_model(model))
+    if p is None:
+        return None if (inp or out or cr or cc) else ws * WEB_SEARCH_USD
+    if p.get("long") and inp + cr + cc > p["long"]["threshold"]:
+        p = p["long"]
     cost = (
         inp * p["input"]
         + out * p["output"]

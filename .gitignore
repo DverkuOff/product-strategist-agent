@@ -46,3 +46,6 @@ build/
 projects/*/state/.cost-sessions.json
 materials/.lock
 projects/*/materials/.lock
+projects/.cost-seen.json
+projects/.cost-transcripts.json
+projects/.cost.lock
