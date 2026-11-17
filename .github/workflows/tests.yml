@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Юнит-тесты (без LLM и без сети)
+        run: python3 -m unittest discover -s tests -v
+      - name: Ворота качества на эталонной задаче
+        run: |
+          python3 scripts/verify_claims.py --project tests/fixtures/demo
+          python3 scripts/promise_lint.py  --project tests/fixtures/demo
+          python3 scripts/decision_lint.py --project tests/fixtures/demo
+          python3 scripts/revisit.py       --project tests/fixtures/demo
+          python3 scripts/compare.py       --project tests/fixtures/demo --no-write > /dev/null
+      - name: settings.json — валидный JSON
+        run: python3 -c "import json; json.load(open('.claude/settings.json'))"
