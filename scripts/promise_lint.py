@@ -13,7 +13,10 @@
   E4 «тест сообщения» не внесён в план проверки;
   E5 рискованная формулировка (ст. 5 38-ФЗ: «самый», «лучший», «№1», «гарантированно», «100%»,
      «полная защита», …) без подтверждающего свойства-факта с той же формулировкой;
-  E6 в обещании есть число, которого нет в опорных свойствах.
+  E6 в обещании есть число, которого нет в опорных свойствах;
+  E7 у обещания и опорного свойства меньше двух общих значимых слов (ссылка на «чужое» свойство);
+  E8 рискованная формулировка в слогане, ключевом сообщении, позиционировании или заголовках (не только в таблице).
+Свойство подтверждает формулировку, только если она стоит в нём утвердительно («не гарантирует» — не подтверждает).
 
   python3 scripts/promise_lint.py               # отчёт
   python3 scripts/promise_lint.py --matrix      # таблица «обещание → свойство → статус → источник»
@@ -38,7 +41,11 @@ RISKY = [
     (r"\bгарант\w*", "«гарантия»"),
     (r"\b100\s*%|\bстопроцентн\w*", "«100%»"),
     (r"\bполн\w*\s+защит\w*|\bполностью\s+(защищ|обезопас)\w*", "«полная защита»"),
-    (r"\bабсолютн\w*", "«абсолютно»"),
+    (r"\bабсолютн\w*\s+(защит|безопасн|надёжн|надежн|гарант)\w*|\bабсолютно\s+\w+", "«абсолютно»"),
+    (r"\b(\w+(ее|ей)|лучше|хуже|дешевле|дороже|выше|ниже|больше|меньше|проще|чаще|реже|надёжней)\s+"
+     r"(всех|всего|любого|любой|любых|других|конкурент\w*|аналог\w*|чем\s+у\b)",
+     "сравнение «лучше / дешевле / надёжнее всех и конкурентов»"),
+    (r"\bни\s+од(ин|на|но|ного|ной)\b|\bсто\s+процентов\b|#\s*1\b", "«ни один / сто процентов / #1»"),
     (r"\bот\s+(всех|любых)\s+мошенни\w*|\bвсех\s+мошенни\w*", "«от всех мошенников»"),
     (r"\bникогда\s+не\b|\bнавсегда\b", "«никогда / навсегда»"),
     (r"\bединственн\w*|\bне\s+имеет\s+аналогов\b|\bбез\s+аналогов\b", "«единственный / без аналогов»"),
@@ -50,17 +57,32 @@ SUPPORT_COL = re.compile(r"опор|свойств", re.I)
 TYPE_COL = re.compile(r"^\s*(тип|статус)\s*$", re.I)
 ID_COL = re.compile(r"^\s*id\s*$", re.I)
 PROP_ID = re.compile(r"\bP-\d+\b")
+KEY_SECTIONS = re.compile(r"слоган|ключев\w*\s+сообщени|позиционн|подтвержд|заголов|креатив|тексты?\s+для", re.I)
 SKIP_SECTIONS = re.compile(r"отказ|не\s+говорим|запрещ|риск|возражени|чего\s+не", re.I)
 
 
-def risky_phrases(text: str) -> list[tuple[str, str]]:
-    """[(ярлык, найденный фрагмент)]"""
+NEGATION_BEFORE = re.compile(r"(\bне|\bбез|\bни|\bнельзя)\s+(\w+\s+){0,2}$", re.I)
+STOP_STEMS = {"котор", "чтобы", "также", "может", "можно", "этого", "более", "всего", "только", "через", "после",
+              "перед", "когда", "очень", "своих", "наших", "ваших"}
+WORDS = re.compile(r"[A-Za-zА-Яа-яЁё]{5,}")
+
+
+def risky_phrases(text: str, affirmative_only: bool = False) -> list[tuple[str, str]]:
+    """[(ярлык, найденный фрагмент)]. affirmative_only: не считать слово после «не / без / ни»
+    («не гарантирует», «не полная защита») — для свойств, которые подтверждают формулировку."""
     out = []
     for rx, label in _RISKY:
-        m = rx.search(text)
-        if m:
+        for m in rx.finditer(text):
+            if affirmative_only and NEGATION_BEFORE.search(text[: m.start()]):
+                continue
             out.append((label, m.group(0)))
+            break
     return out
+
+
+def significant_stems(text: str) -> set[str]:
+    stems = {core.norm_text(w)[:5] for w in WORDS.findall(PROP_ID.sub(" ", text))}
+    return stems - STOP_STEMS
 
 
 def parse_tables(md: str) -> list[list[list[str]]]:
@@ -170,9 +192,15 @@ def lint(proj: Path) -> dict:
             issues.append(("E4", f"тест сообщения {pr['id']} не внесён в out/validation-plan.md"))
         facts = [p for p in known if p["effective_status"] == "fact"]
         fact_text = " ".join(p.get("statement", "") for p in facts)
+        confirmed = {lb for lb, _ in risky_phrases(fact_text, affirmative_only=True)}
         for label, frag in risky_phrases(pr["text"]):
-            if not any(rx.search(fact_text) for rx, lb in _RISKY if lb == label):
+            if label not in confirmed:
                 issues.append(("E5", f"рискованная формулировка {label} («{frag}») без подтверждающего свойства-факта (ст. 5 38-ФЗ)"))
+        if known:
+            ps = significant_stems(pr["text"])
+            shared = ps & significant_stems(" ".join(p.get("statement", "") for p in known))
+            if ps and len(shared) < min(2, len(ps)):
+                issues.append(("E7", "у обещания и опорного свойства почти нет общих слов — похоже на ссылку на чужое свойство"))
         nums_ok = core.numbers_in(" ".join(p.get("statement", "") for p in known))
         bad_nums = [n for n in core.extract_numbers(PROP_ID.sub(" ", pr["text"])) if n not in nums_ok]
         if bad_nums and known:
@@ -191,7 +219,11 @@ def lint(proj: Path) -> dict:
         if SKIP_SECTIONS.search(section) or line.strip().startswith("|") or any(t in line for t in table_texts):
             continue
         for label, frag in risky_phrases(re.sub(r"~~.*?~~", "", line)):
-            rep["warnings"].append(f"вне таблицы обещаний: {label} («{frag}») в строке «{line.strip()[:80]}»")
+            msg = f"{label} («{frag}») в строке «{line.strip()[:80]}» раздела «{section.lstrip('# ').strip()}»"
+            if KEY_SECTIONS.search(section):
+                rep["errors"].append(f"E8 слоган / ключевое сообщение: {msg} — главное сообщение подчиняется тем же правилам, что и обещания")
+            else:
+                rep["warnings"].append(f"вне таблицы обещаний: {msg}")
     n_bad = sum(1 for p in rep["promises"] if not p["ok"])
     rep["stats"] = {
         "promises": len(rep["promises"]),
