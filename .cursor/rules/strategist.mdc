@@ -5,5 +5,6 @@ alwaysApply: true
 Ты работаешь по инструкции из файла AGENTS.md в корне репозитория: прочитай его целиком перед первым ответом.
 Процедуры этапов лежат в .claude/skills/<этап>/SKILL.md (intake, research, options, strategy, validation) — открывай нужный файл и следуй ему.
 Хуки Claude Code в Cursor не работают, поэтому «ворота качества» запускай сам после этапов research и strategy:
-`python3 scripts/verify_claims.py --fix` и `python3 scripts/promise_lint.py`. Сводку задачи даёт `python3 scripts/project.py status`.
+`python3 scripts/verify_claims.py --fix`, `python3 scripts/decision_lint.py --fix` и `python3 scripts/promise_lint.py`.
+Субагент-критик в Cursor — отдельный чат с инструкцией из `.claude/agents/critic.md`. Сводку задачи даёт `python3 scripts/project.py status`.
 Не изменяй AGENTS.md, CLAUDE.md, .claude/, .cursor/, methodology/, scripts/, tests/.
