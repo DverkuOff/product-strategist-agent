@@ -135,7 +135,8 @@ def convert_local(path: Path) -> tuple[str, str, bytes]:
     return "", out.stdout, data
 
 
-def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, kind: str, note: str = "") -> Path:
+def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, kind: str, note: str = "",
+                  publisher: str = "", published: str = "") -> Path:
     mid = next_id(proj)
     fname = f"{mid}-{slugify(title)}.md"
     meta = {
@@ -147,6 +148,10 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
         "kind": kind,
         "trust": "untrusted",
     }
+    if publisher:
+        meta["publisher"] = publisher
+    if published:
+        meta["published"] = published
     if note:
         meta["note"] = note
     front = "\n".join(f'{k}: "{v}"' if any(c in str(v) for c in ":#") else f"{k}: {v}" for k, v in meta.items())
@@ -162,6 +167,8 @@ def main(argv=None) -> int:
     ap.add_argument("--title", default="")
     ap.add_argument("--kind", default=None, choices=["web", "document", "table", "interview", "synthetic"])
     ap.add_argument("--note", default="")
+    ap.add_argument("--publisher", default="", help="кто опубликовал: компания, издание, регулятор")
+    ap.add_argument("--published", default="", help="дата публикации ГГГГ-ММ-ДД, если известна")
     ap.add_argument("--project", default=None)
     args = ap.parse_args(argv)
 
@@ -194,7 +201,8 @@ def main(argv=None) -> int:
         return 1
     if len(text.strip()) < 200:
         print(f"ВНИМАНИЕ: в {src} почти нет текста ({len(text.strip())} символов) — возможно, капча или JS-страница.", file=sys.stderr)
-    out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=args.note)
+    out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=args.note,
+                        publisher=args.publisher, published=args.published)
     hits = injection.scan(text)
     rel = out.relative_to(core.repo_root()) if out.is_relative_to(core.repo_root()) else out
     print(f"Сохранено: {rel} ({len(text)} символов, kind={kind}). Читать через субагента source-reader.")

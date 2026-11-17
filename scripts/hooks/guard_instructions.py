@@ -28,7 +28,7 @@ WRITE_OPS = re.compile(
     r"\bln\b|\binstall\b|\bdd\b|\bgit\s+(checkout|restore|rm|mv|apply|reset|stash)\b|write_text|open\([^)]*['\"][wa])"
 )
 REDIRECT = re.compile(r"(?<![-=<>\d&])>{1,2}\s*[\"']?([^\s\"';|&<>]+)")
-MENTION = re.compile(r"(AGENTS\.md|CLAUDE\.md|README\.md|\.gitignore|\.claude\b|\.cursor\b|methodology/|scripts/|tests/|_template|\.env\b)")
+MENTION = re.compile(r"(AGENTS\.md|CLAUDE\.md|README\.md|\.gitignore|\.claude\b|\.cursor\b|\bmethodology\b|\bscripts\b|\btests\b|_template|\.env\b)")
 
 
 def is_protected(path_str: str, r: Path) -> bool:
