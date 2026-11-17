@@ -318,3 +318,25 @@ def ledger_total(proj: Path) -> float:
         except ValueError:
             pass
     return total
+
+
+# ---------- журнал исследования (out/research-log.md) ----------
+
+RESEARCH_LOG_HEAD = (
+    "# Как проводилось исследование\n\n"
+    "Какие запросы делал агент, что открыл, что отбросил и почему. Строки про снимки пишет `scripts/fetch_source.py`, "
+    "запросы и отбрасывания — агент командой `scripts/research_log.py`.\n\n"
+    "| Время | Действие | Что | Результат / почему |\n|---|---|---|---|\n"
+)
+RESEARCH_ACTIONS = {"query": "поиск", "open": "открыт", "fail": "не открылся", "discard": "отброшен", "note": "заметка", "plan": "план"}
+
+
+def log_research(proj: Path, action: str, what: str, result: str = "") -> None:
+    f = proj / "out" / "research-log.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    if not f.exists():
+        f.write_text(RESEARCH_LOG_HEAD, encoding="utf-8")
+    clean = lambda x: str(x).replace("|", "/").replace("\n", " ").strip()  # noqa: E731
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(f"| {stamp} | {RESEARCH_ACTIONS.get(action, action)} | {clean(what)} | {clean(result)} |\n")

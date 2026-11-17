@@ -96,6 +96,20 @@ class FetchSource(TempRepoCase):
         self.assertIn("2026-01,100", txt)
         self.assertNotIn("2026-01,100", out)  # содержимое не печатается в контекст оркестратора
 
+    def test_research_log_written_by_script(self):
+        src = self.tmp / "notes.md"
+        src.write_text("Заметки РП: подключений мало, " * 20, encoding="utf-8")
+        run(fetch_source.main, [str(src), "--title", "Заметки РП"])
+        run(fetch_source.main, [str(self.tmp / "нет-такого.pdf")])
+        import research_log
+        run(research_log.main, ["query", "Защита близких цена", "--result", "цены нет"])
+        run(research_log.main, ["discard", "M-11", "--result", "анонимный форум"])
+        log = (self.proj / "out" / "research-log.md").read_text(encoding="utf-8")
+        self.assertIn("| открыт | M-12 Заметки РП", log)
+        self.assertIn("| не открылся |", log)
+        self.assertIn("| поиск | Защита близких цена | цены нет |", log)
+        self.assertIn("| отброшен | M-11 | анонимный форум |", log)
+
     def test_trap_warning(self):
         rc, out = run(fetch_source.main, [str(Path(__file__).parent.parent / "projects" / "demo-zashchita-blizkih" / "traps" / "blog-antifraud-review.html")])
         self.assertIn("ВНИМАНИЕ", out)

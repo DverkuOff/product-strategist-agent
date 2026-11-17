@@ -196,6 +196,7 @@ def main(argv=None) -> int:
             kind = args.kind or ("table" if p.suffix.lower() in {".csv", ".tsv", ".xlsx"} else "document")
             url = f"file:{p.name}"
     except Exception as e:  # noqa: BLE001 — сообщаем агенту о сбое, а не падаем трейсбеком
+        core.log_research(proj, "fail", src, f"{type(e).__name__}: {str(e)[:120]}")
         print(f"НЕ УДАЛОСЬ получить {src}: {type(e).__name__}: {str(e)[:200]}. "
               f"Запиши пробел в research.md или попроси РП сохранить страницу вручную.", file=sys.stderr)
         return 1
@@ -204,6 +205,8 @@ def main(argv=None) -> int:
     out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=args.note,
                         publisher=args.publisher, published=args.published)
     hits = injection.scan(text)
+    core.log_research(proj, "open", f"{out.name.split('-')[0]}-{out.name.split('-')[1]} {args.title or title or src} ({url})",
+                      f"снимок {len(text)} символов" + (f"; {len(hits)} фрагм., похожих на инструкции агенту" if hits else ""))
     rel = out.relative_to(core.repo_root()) if out.is_relative_to(core.repo_root()) else out
     print(f"Сохранено: {rel} ({len(text)} символов, kind={kind}). Читать через субагента source-reader.")
     if hits:

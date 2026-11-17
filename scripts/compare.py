@@ -93,7 +93,7 @@ def analyze(text: str, material_numbers: set[str]) -> dict:
 
 
 def agent_text(proj: Path) -> str:
-    docs = [p for p in sorted((proj / "out").glob("*.md")) if p.name not in {"compare.md", "README.md"}]
+    docs = [p for p in sorted((proj / "out").glob("*.md")) if p.name not in {"compare.md", "README.md", "research-log.md"}]
     return "\n\n".join(p.read_text(encoding="utf-8") for p in docs)
 
 
