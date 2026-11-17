@@ -2,8 +2,9 @@
 
 > Это файл для разработчика репозитория, а не инструкция агента-стратега. До 17.11.2026 он лежал в корневом CLAUDE.md.
 > Корневой CLAUDE.md теперь подключает AGENTS.md — инструкцию самого агента для руководителя продукта.
-> Для разработки агента запускай сессию так: `STRATEGIST_MAINTAINER=1 claude` — иначе PreToolUse-хук не даст править
-> AGENTS.md, .claude/, methodology/, scripts/ и tests/ (это защита агента от prompt injection, см. docs/decisions.md).
+> Для разработки агента запускай сессию так: `STRATEGIST_MAINTAINER=1 claude` и выключи sandbox в `.claude/settings.local.json`
+> (`{"sandbox": {"enabled": false}}`) — иначе PreToolUse-хук и sandbox не дадут править AGENTS.md, .claude/, methodology/,
+> scripts/ и tests/ (это защита агента от prompt injection, см. docs/decisions.md).
 
 ## Контекст (заполняет /hackathon:kickoff, обновляй по ходу)
 - Хакатон / организатор: конкурс по работе с ИИ (организатор неясен, см. ../../docs/00-brief.md), кейс от Фабрики Продуктов МегаФона

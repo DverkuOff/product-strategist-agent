@@ -74,7 +74,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -138,5 +138,41 @@
   "statusLine": {
     "type": "command",
     "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/statusline.py\""
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "python3 scripts/fetch_source.py *",
+      "python3 scripts/claims.py human-verified *",
+      "python3 scripts/project.py approve-plan*",
+      "uvx markitdown *"
+    ],
+    "filesystem": {
+      "denyWrite": [
+        "./AGENTS.md",
+        "./CLAUDE.md",
+        "./README.md",
+        "./.gitignore",
+        "./.gitattributes",
+        "./.claude",
+        "./.cursor",
+        "./.github",
+        "./methodology",
+        "./scripts",
+        "./tests",
+        "./projects/_template",
+        "./projects/*/materials",
+        "./projects/*/inbox",
+        "./projects/*/state/human.jsonl"
+      ],
+      "denyRead": [
+        "./.env",
+        "./.env.*",
+        "~/.ssh",
+        "~/.aws"
+      ]
+    }
   }
 }
