@@ -1,0 +1,302 @@
+"""Общие функции агента-стратега: пути, состояние задачи, снимки, нормализация текста, цены.
+
+Только стандартная библиотека Python 3.10+. Работает без LLM.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import os
+import re
+from pathlib import Path
+
+STAGES = ["intake", "research", "options", "strategy", "validation", "done"]
+STAGE_TITLES = {
+    "intake": "постановка задачи",
+    "research": "материалы и исследование",
+    "options": "варианты",
+    "strategy": "продуктовая и коммуникационная стратегия",
+    "validation": "план проверки",
+    "done": "готово",
+}
+CLAIM_KINDS = {"fact", "hypothesis", "forecast", "synthetic"}
+CLAIM_STATUSES = {"active", "superseded", "retracted"}
+KIND_RU = {"fact": "факт", "hypothesis": "гипотеза", "forecast": "прогноз", "synthetic": "синтетика"}
+
+# Прейскурант Claude API, $ за 1M токенов: вход, выход, чтение кэша.
+# Запись кэша: 1,25× входа (TTL 5 мин) и 2× входа (TTL 1 час).
+# Источник: справочник моделей Claude API, кэш 03.11.2026; сверять с
+# https://platform.claude.com/docs/en/about-claude/pricing
+PRICES = {
+    "haiku": {"input": 0.10, "output": 0.50, "cache_read": 0.01},
+    "sonnet": {"input": 2.00, "output": 10.00, "cache_read": 0.10},
+    "opus": {"input": 4.00, "output": 20.00, "cache_read": 0.20},
+    "fable": {"input": 8.00, "output": 40.00, "cache_read": 0.20},
+}
+WEB_SEARCH_USD = 10.0 / 1000  # $10 за 1000 поисков
+
+
+def now_iso() -> str:
+    return _dt.datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def today() -> str:
+    return _dt.date.today().isoformat()
+
+
+# ---------- пути ----------
+
+def repo_root(start: str | os.PathLike | None = None) -> Path:
+    """Корень репозитория агента: $CLAUDE_PROJECT_DIR или папка с AGENTS.md выше start."""
+    env = os.environ.get("STRATEGIST_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR")
+    if env and (Path(env) / "AGENTS.md").exists():
+        return Path(env).resolve()
+    p = Path(start or Path(__file__).resolve().parent).resolve()
+    for cand in [p, *p.parents]:
+        if (cand / "AGENTS.md").exists() and (cand / "projects").exists():
+            return cand
+    return Path(__file__).resolve().parent.parent
+
+
+def projects_dir(root: Path | None = None) -> Path:
+    return (root or repo_root()) / "projects"
+
+
+def active_slug(root: Path | None = None) -> str | None:
+    f = projects_dir(root) / ".active"
+    if f.exists():
+        slug = f.read_text(encoding="utf-8").strip()
+        if slug and (projects_dir(root) / slug).is_dir():
+            return slug
+    return None
+
+
+def project_path(slug: str | None = None, root: Path | None = None) -> Path | None:
+    """Папка задачи: явный slug или путь, иначе активная задача."""
+    if slug:
+        p = Path(slug)
+        if p.is_dir() and (p / "state").is_dir():
+            return p.resolve()
+        cand = projects_dir(root) / slug
+        return cand if cand.is_dir() else None
+    s = active_slug(root)
+    return projects_dir(root) / s if s else None
+
+
+# ---------- файлы состояния ----------
+
+def read_json(path: Path, default=None):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return default
+
+
+def write_json(path: Path, data) -> None:
+    Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    rows = []
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return rows
+    for i, line in enumerate(text.splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{path}: строка {i} не JSON: {e}") from e
+    return rows
+
+
+def write_jsonl(path: Path, rows: list[dict]) -> None:
+    Path(path).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+
+
+def load_task(proj: Path) -> dict:
+    return read_json(proj / "state" / "task.json", {}) or {}
+
+
+def append_journal(proj: Path, text: str) -> None:
+    f = proj / "state" / "journal.md"
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(f"- {stamp} · {text}\n")
+
+
+# ---------- материалы (снимки) ----------
+
+FRONT_RE = re.compile(r"^---\n(.*?)\n---\n?", re.S)
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Простой frontmatter «ключ: значение» (без вложенности). Возвращает (поля, тело)."""
+    m = FRONT_RE.match(text)
+    if not m:
+        return {}, text
+    meta = {}
+    for line in m.group(1).splitlines():
+        if ":" in line and not line.startswith(" "):
+            k, v = line.split(":", 1)
+            v = v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+            meta[k.strip()] = v
+    return meta, text[m.end():]
+
+
+def list_materials(proj: Path) -> dict[str, dict]:
+    """M-id → {path, meta, body}. Id берётся из frontmatter или префикса имени файла."""
+    out: dict[str, dict] = {}
+    mdir = proj / "materials"
+    if not mdir.is_dir():
+        return out
+    for f in sorted(mdir.rglob("*")):
+        if not f.is_file() or f.name.startswith(".") or f.name.lower() == "readme.md":
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        meta, body = parse_frontmatter(text)
+        mid = meta.get("id")
+        if not mid:
+            m = re.match(r"(M-\d+)", f.name)
+            mid = m.group(1) if m else None
+        if mid:
+            out[mid] = {"path": f, "meta": meta, "body": body}
+    return out
+
+
+def material_is_synthetic(mat: dict) -> bool:
+    meta = mat.get("meta", {})
+    return str(meta.get("kind", "")).lower() == "synthetic" or str(meta.get("synthetic", "")).lower() in {"true", "yes", "1"}
+
+
+# ---------- нормализация и извлечение ----------
+
+NBSP = "   "
+
+
+def norm_text(s: str) -> str:
+    s = s.lower().replace("ё", "е")
+    for ch in NBSP:
+        s = s.replace(ch, " ")
+    s = re.sub(r"[«»“”„\"']", "", s)
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+NUM_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:[    ]\d{3})+|\d+)(?:[.,](\d+))?(?![\d])")
+
+
+def extract_numbers(s: str) -> list[str]:
+    """Числа в каноническом виде: «1 000» → «1000», «79,37» → «79.37», «10%» → «10»."""
+    out = []
+    for m in NUM_RE.finditer(s):
+        whole = re.sub(r"[    ]", "", m.group(1))
+        frac = m.group(2)
+        out.append(f"{int(whole)}.{frac}" if frac else str(int(whole)))
+    return out
+
+
+SENT_START_RE = re.compile(r"(?:^|[.!?…]\s+|\n\s*[-*•]?\s*)$")
+WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\-]*")
+
+
+def extract_proper_nouns(s: str) -> list[str]:
+    """Слова с заглавной буквы (имена, бренды, организации), длиной от 3 символов.
+
+    Первое слово предложения учитываем, только если оно похоже на бренд или аббревиатуру
+    (внутренняя заглавная, латиница или все заглавные): так «Подключения выросли…» не считается именем.
+    """
+    out = []
+    for m in WORD_RE.finditer(s):
+        w = m.group(0)
+        if len(w) < 3 or not w[0].isupper():
+            continue
+        prefix = s[: m.start()]
+        at_start = bool(SENT_START_RE.search(prefix)) or prefix.strip() == ""
+        brandish = any(c.isupper() for c in w[1:]) or re.search(r"[A-Za-z]", w) is not None
+        if at_start and not brandish:
+            continue
+        out.append(w)
+    return out
+
+
+def stem(word: str) -> str:
+    """Грубая основа для поиска с учётом падежей: отрезаем до 2 последних букв, минимум 3 символа."""
+    w = norm_text(word)
+    if len(w) <= 4:
+        return w
+    return w[: max(3, len(w) - 2)]
+
+
+def numbers_in(text: str) -> set[str]:
+    return set(extract_numbers(text))
+
+
+# ---------- стоимость ----------
+
+def model_family(model: str) -> str | None:
+    m = (model or "").lower()
+    for fam in PRICES:
+        if fam in m:
+            return fam
+    return None
+
+
+def usage_cost(model: str, usage: dict) -> float:
+    fam = model_family(model)
+    if not fam:
+        return 0.0
+    p = PRICES[fam]
+    inp = usage.get("input_tokens", 0) or 0
+    out = usage.get("output_tokens", 0) or 0
+    cr = usage.get("cache_read_input_tokens", 0) or 0
+    cc = usage.get("cache_creation_input_tokens", 0) or 0
+    det = usage.get("cache_creation") or {}
+    c1h = det.get("ephemeral_1h_input_tokens", 0) or 0
+    c5m = det.get("ephemeral_5m_input_tokens", 0) or 0
+    if c1h + c5m == 0:
+        c5m = cc
+    ws = ((usage.get("server_tool_use") or {}).get("web_search_requests", 0)) or 0
+    cost = (
+        inp * p["input"]
+        + out * p["output"]
+        + cr * p["cache_read"]
+        + c5m * p["input"] * 1.25
+        + c1h * p["input"] * 2.0
+    ) / 1_000_000
+    return cost + ws * WEB_SEARCH_USD
+
+
+LEDGER_FIELDS = [
+    "ts", "session_id", "agent", "model", "stage",
+    "input_tokens", "cache_write_tokens", "cache_read_tokens", "output_tokens",
+    "web_searches", "cost_usd",
+]
+
+
+def read_ledger(proj: Path) -> list[dict]:
+    import csv
+
+    f = proj / "state" / "cost-ledger.csv"
+    if not f.exists():
+        return []
+    with f.open(encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def ledger_total(proj: Path) -> float:
+    total = 0.0
+    for r in read_ledger(proj):
+        try:
+            total += float(r.get("cost_usd") or 0)
+        except ValueError:
+            pass
+    return total

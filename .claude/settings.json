@@ -1,4 +1,6 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "sonnet",
   "attribution": {
     "commit": "",
     "pr": "",
@@ -8,21 +10,29 @@
     "allow": [
       "WebSearch",
       "WebFetch",
-      "Edit(docs/**)",
-      "Edit(pitch/**)",
-      "Edit(README.md)",
-      "Bash(ls)",
+      "Edit(projects/**)",
+      "Bash(python3 scripts/project.py *)",
+      "Bash(python3 scripts/claims.py *)",
+      "Bash(python3 scripts/fetch_source.py *)",
+      "Bash(python3 scripts/verify_claims.py *)",
+      "Bash(python3 scripts/verify_claims.py)",
+      "Bash(python3 scripts/promise_lint.py *)",
+      "Bash(python3 scripts/promise_lint.py)",
+      "Bash(python3 scripts/cost_report.py *)",
+      "Bash(python3 scripts/cost_report.py)",
+      "Bash(python3 scripts/compare.py *)",
+      "Bash(python3 scripts/compare.py)",
+      "Bash(python3 scripts/revisit.py *)",
+      "Bash(python3 scripts/revisit.py)",
+      "Bash(python3 -m unittest *)",
       "Bash(ls *)",
       "Bash(wc *)",
       "Bash(head *)",
-      "Bash(file *)",
       "Bash(grep *)",
       "Bash(git status)",
-      "Bash(git status *)",
       "Bash(git log *)",
       "Bash(git diff *)",
-      "Bash(uvx markitdown *)",
-      "Bash(textutil -convert txt -stdout *)"
+      "Bash(uvx markitdown *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -33,5 +43,73 @@
       "Bash(git push -f *)",
       "Bash(git push --force-with-lease *)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/session_start.py\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/guard_instructions.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/mark_untrusted.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/stage_gate.py\"",
+            "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/cost_ledger.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/hooks/cost_ledger.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/statusline.py\""
   }
 }
