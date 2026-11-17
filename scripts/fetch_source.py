@@ -170,12 +170,20 @@ def main(argv=None) -> int:
     ap.add_argument("--publisher", default="", help="кто опубликовал: компания, издание, регулятор")
     ap.add_argument("--published", default="", help="дата публикации ГГГГ-ММ-ДД, если известна")
     ap.add_argument("--project", default=None)
+    ap.add_argument("--no-plan", action="store_true", help="сохранить без утверждённого плана (материалы РП, дозагрузка по просьбе РП)")
     args = ap.parse_args(argv)
 
     proj = core.project_path(args.project)
     if not proj:
         print("Нет активной задачи: python3 scripts/project.py new ...", file=sys.stderr)
         return 2
+    stage = core.load_task(proj).get("stage")
+    plan = core.read_json(proj / "state" / "research-plan.json", None)
+    if stage == "research" and not (plan and plan.get("approved")) and not args.no_plan:
+        print("Сначала план исследования на утверждение: вопросы, источники и оценка стоимости "
+              "(python3 scripts/estimate.py --sources N --searches M --save, out/research-plan.md). "
+              "После «начать» от РП: python3 scripts/project.py approve-plan.", file=sys.stderr)
+        return 3
     src = args.source
     try:
         if re.match(r"https?://", src):

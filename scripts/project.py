@@ -8,6 +8,7 @@
   python3 scripts/project.py set next_step "собрать отчётность за 2025"
   python3 scripts/project.py wait "Какой вариант берём: B или C?"   # ждём решения РП
   python3 scripts/project.py log "РП уточнил: получатель — CPO"
+  python3 scripts/project.py approve-plan --note "РП: начать"   # после утверждения плана исследования
   python3 scripts/project.py list | use <slug>
 """
 from __future__ import annotations
@@ -128,6 +129,17 @@ def status_text(proj: Path, short: bool = False) -> str:
             lines.append(f"ПЕРЕСМОТР: {f}")
     except Exception:  # noqa: BLE001 — сводка не должна падать из-за доп. модуля
         pass
+    try:
+        import estimate  # noqa: WPS433
+
+        pv = estimate.plan_vs_fact(proj)
+        if pv:
+            e = pv["estimate"]
+            st = "утверждён" if pv["approved"] else "ЖДЁТ УТВЕРЖДЕНИЯ РП"
+            lines.append(f"План исследования {st}: оценка ${e['usd']:.2f} (${e['usd_low']:.2f}–${e['usd_high']:.2f}), "
+                         f"{e['sources']} источников; факт этапа research ${pv['fact_usd']:.2f}, снимков {pv['fact_sources']}")
+    except Exception:  # noqa: BLE001
+        pass
     total = core.ledger_total(proj)
     if total:
         lines.append(f"Потрачено: ${total:.2f} (оценка по прейскуранту API, state/cost-ledger.csv)")
@@ -202,6 +214,28 @@ def cmd_wait(args) -> int:
     return 0
 
 
+def cmd_approve_plan(args) -> int:
+    proj = _proj_or_fail(args.slug)
+    f = proj / "state" / "research-plan.json"
+    plan = core.read_json(f, None)
+    if not plan:
+        print("Нет state/research-plan.json: сначала python3 scripts/estimate.py --sources N --searches M --save", file=sys.stderr)
+        return 2
+    plan["approved"] = True
+    plan["approved_at"] = core.now_iso()
+    if args.note:
+        plan["approved_note"] = args.note
+    core.write_json(f, plan)
+    t = core.load_task(proj)
+    t.pop("waiting_for", None)
+    core.write_json(proj / "state" / "task.json", t)
+    e = plan.get("estimate", {})
+    core.append_journal(proj, f"РП утвердил план исследования (оценка ${e.get('usd', 0):.2f}, ≈{e.get('minutes', 0):.0f} мин)"
+                        + (f": {args.note}" if args.note else ""))
+    print("План исследования утверждён: можно собирать материалы.")
+    return 0
+
+
 def cmd_log(args) -> int:
     proj = _proj_or_fail(args.slug)
     core.append_journal(proj, args.text)
@@ -221,6 +255,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("set"); p.add_argument("key"); p.add_argument("value"); p.set_defaults(fn=cmd_set)
     p = sub.add_parser("wait"); p.add_argument("question"); p.set_defaults(fn=cmd_wait)
     p = sub.add_parser("log"); p.add_argument("text"); p.set_defaults(fn=cmd_log)
+    p = sub.add_parser("approve-plan"); p.add_argument("--note", default=""); p.set_defaults(fn=cmd_approve_plan)
     args = ap.parse_args(argv)
     return args.fn(args)
 

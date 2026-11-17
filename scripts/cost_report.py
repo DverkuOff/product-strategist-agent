@@ -73,8 +73,16 @@ def main(argv=None) -> int:
     rows = core.read_ledger(proj)
     if not rows:
         print("Журнал стоимости пуст: он заполняется хуком Stop в Claude Code (state/cost-ledger.csv).")
-        return 0
-    print(render(summarize(rows), args.md))
+    else:
+        print(render(summarize(rows), args.md))
+    import estimate
+
+    pv = estimate.plan_vs_fact(proj)
+    if pv:
+        e = pv["estimate"]
+        dev = (pv["fact_usd"] / e["usd"] - 1) * 100 if e["usd"] else 0
+        print(f"\nПлан исследования против факта: оценка ${e['usd']:.2f} (${e['usd_low']:.2f}–${e['usd_high']:.2f}), "
+              f"{e['sources']} источников; факт ${pv['fact_usd']:.2f} ({dev:+.0f}%), снимков {pv['fact_sources']}")
     return 0
 
 

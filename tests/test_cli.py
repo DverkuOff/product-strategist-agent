@@ -128,3 +128,56 @@ class Injection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResearchPlan(TempRepoCase):
+    def set_stage(self, stage):
+        t = json.loads((self.proj / "state" / "task.json").read_text(encoding="utf-8"))
+        t["stage"] = stage
+        (self.proj / "state" / "task.json").write_text(json.dumps(t, ensure_ascii=False), encoding="utf-8")
+
+    def test_estimate_is_deterministic_and_scales(self):
+        import estimate
+        a = estimate.estimate(4, 2, self.proj, calibrate=False)
+        b = estimate.estimate(8, 2, self.proj, calibrate=False)
+        self.assertGreater(b["usd"], a["usd"])
+        self.assertLess(a["usd_low"], a["usd"])
+        self.assertLess(a["usd"], a["usd_high"])
+        self.assertAlmostEqual(a["parts_usd"]["веб-поиск"], 0.02)
+        self.assertEqual(a, estimate.estimate(4, 2, self.proj, calibrate=False))
+
+    def test_fetch_blocked_until_plan_approved(self):
+        import estimate
+        self.set_stage("research")
+        src = self.tmp / "a.md"
+        src.write_text("текст " * 100, encoding="utf-8")
+        self.assertEqual(run(fetch_source.main, [str(src)])[0], 3)
+        run(estimate.main, ["--sources", "3", "--searches", "2", "--save"])
+        self.assertEqual(run(fetch_source.main, [str(src)])[0], 3)  # сохранён, но не утверждён
+        rc, out = run(project.main, ["status"])
+        self.assertIn("ЖДЁТ УТВЕРЖДЕНИЯ РП", out)
+        self.assertEqual(run(project.main, ["approve-plan", "--note", "начать"])[0], 0)
+        self.assertEqual(run(fetch_source.main, [str(src)])[0], 0)
+        self.assertEqual(run(fetch_source.main, [str(src), "--no-plan"])[0], 0)
+
+    def test_plan_vs_fact_in_cost_report(self):
+        import cost_report
+        import estimate
+        run(estimate.main, ["--sources", "3", "--searches", "1", "--save"])
+        run(project.main, ["approve-plan"])
+        led = self.proj / "state" / "cost-ledger.csv"
+        with led.open("a", encoding="utf-8") as fh:
+            fh.write("2026-11-17T12:00:00+03:00,s,main,claude-sonnet-5-5,research,0,0,0,0,0,0.500000\n")
+        rc, out = run(cost_report.main, ["--project", str(self.proj)])
+        self.assertIn("План исследования против факта", out)
+        self.assertIn("факт $0.50", out)
+
+    def test_calibration_from_finished_tasks(self):
+        import estimate
+        run(estimate.main, ["--sources", "3", "--searches", "1", "--save"])
+        plan = json.loads((self.proj / "state" / "research-plan.json").read_text(encoding="utf-8"))
+        with (self.proj / "state" / "cost-ledger.csv").open("a", encoding="utf-8") as fh:
+            fh.write(f"2026-11-17T12:00:00+03:00,s,main,claude-sonnet-5-5,research,0,0,0,0,0,{plan['estimate']['usd'] * 2:.6f}\n")
+        k, n = estimate.calibration(self.tmp)  # задача уже на этапе validation — исследование завершено
+        self.assertEqual(n, 1)
+        self.assertAlmostEqual(k, 2.0, places=2)

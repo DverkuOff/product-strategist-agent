@@ -27,6 +27,7 @@
       "Bash(python3 scripts/research_log.py *)",
       "Bash(python3 scripts/decision_lint.py *)",
       "Bash(python3 scripts/decision_lint.py)",
+      "Bash(python3 scripts/estimate.py *)",
       "Bash(python3 -m unittest *)",
       "Bash(ls *)",
       "Bash(wc *)",
