@@ -187,6 +187,13 @@ def cmd_stage(args) -> int:
             if miss:
                 print("Этап не завершён: " + "; ".join(m.split(": ", 1)[1] for m in miss), file=sys.stderr)
                 return 2
+            import gates  # noqa: WPS433 — ворота качества те же, что у Stop-хука
+            probs, _ = gates.problems(proj, fix=False)
+            if probs:
+                print(f"Переход {prev} → {args.stage} запрещён: ворота качества красные ({len(probs)}). Исправь и повтори "
+                      "(python3 scripts/verify_claims.py --fix, decision_lint.py, promise_lint.py):\n- "
+                      + "\n- ".join(probs[:10]), file=sys.stderr)
+                return 2
     done = t.setdefault("stages_done", [])
     if prev and prev in core.STAGES and prev != args.stage and prev not in done \
             and core.STAGES.index(args.stage) > core.STAGES.index(prev):
@@ -261,18 +268,18 @@ def cmd_log(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", dest="slug", default=None, help="slug задачи (по умолчанию активная)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("new"); p.add_argument("slug"); p.add_argument("title"); p.set_defaults(fn=cmd_new)
-    p = sub.add_parser("use"); p.add_argument("slug"); p.set_defaults(fn=cmd_use)
-    p = sub.add_parser("list"); p.set_defaults(fn=cmd_list)
-    p = sub.add_parser("status"); p.add_argument("--short", action="store_true"); p.set_defaults(fn=cmd_status)
-    p = sub.add_parser("stage"); p.add_argument("stage"); p.add_argument("--note"); p.add_argument("--next"); p.set_defaults(fn=cmd_stage)
-    p = sub.add_parser("set"); p.add_argument("key"); p.add_argument("value"); p.set_defaults(fn=cmd_set)
-    p = sub.add_parser("wait"); p.add_argument("question"); p.set_defaults(fn=cmd_wait)
-    p = sub.add_parser("log"); p.add_argument("text"); p.set_defaults(fn=cmd_log)
-    p = sub.add_parser("approve-plan"); p.add_argument("--note", default=""); p.set_defaults(fn=cmd_approve_plan)
+    p = sub.add_parser("new", allow_abbrev=False); p.add_argument("slug"); p.add_argument("title"); p.set_defaults(fn=cmd_new)
+    p = sub.add_parser("use", allow_abbrev=False); p.add_argument("slug"); p.set_defaults(fn=cmd_use)
+    p = sub.add_parser("list", allow_abbrev=False); p.set_defaults(fn=cmd_list)
+    p = sub.add_parser("status", allow_abbrev=False); p.add_argument("--short", action="store_true"); p.set_defaults(fn=cmd_status)
+    p = sub.add_parser("stage", allow_abbrev=False); p.add_argument("stage"); p.add_argument("--note"); p.add_argument("--next"); p.set_defaults(fn=cmd_stage)
+    p = sub.add_parser("set", allow_abbrev=False); p.add_argument("key"); p.add_argument("value"); p.set_defaults(fn=cmd_set)
+    p = sub.add_parser("wait", allow_abbrev=False); p.add_argument("question"); p.set_defaults(fn=cmd_wait)
+    p = sub.add_parser("log", allow_abbrev=False); p.add_argument("text"); p.set_defaults(fn=cmd_log)
+    p = sub.add_parser("approve-plan", allow_abbrev=False); p.add_argument("--note", default=""); p.set_defaults(fn=cmd_approve_plan)
     args = ap.parse_args(argv)
     return args.fn(args)
 

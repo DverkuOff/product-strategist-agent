@@ -125,12 +125,14 @@ class Hooks(TempRepoCase):
         self.assertEqual(rc, 2)
         self.assertIn("Предупреждения", err)
 
-    def test_stage_gate_intake_skips(self):
+    def test_stage_gate_checks_existing_results_on_any_stage(self):  # ПМИ-2 Н-9: откат этапа не выключает ворота
         t = json.loads((self.proj / "state" / "task.json").read_text())
         t["stage"] = "intake"
         (self.proj / "state" / "task.json").write_text(json.dumps(t, ensure_ascii=False))
         self.replace_in("out/comms-strategy.md", "| P-06 | тест сообщения |", "| P-06 | обещание |")
-        self.assertEqual(self.hook("stage_gate.py", {"hook_event_name": "Stop"})[0], 0)
+        rc, _, err = self.hook("stage_gate.py", {"hook_event_name": "Stop"})
+        self.assertEqual(rc, 2)
+        self.assertIn("MSG-05", err)
 
     # --- Stop / SubagentStop: стоимость
     def transcript(self, name, lines):
