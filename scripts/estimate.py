@@ -119,6 +119,9 @@ def main(argv=None) -> int:
     ap.add_argument("--searches", type=int, default=0, help="сколько поисковых запросов")
     ap.add_argument("--save", action="store_true", help="записать в state/research-plan.json (статус: ждёт утверждения)")
     args = ap.parse_args(argv)
+    if args.sources < 0 or args.searches < 0:
+        print("Число источников и запросов не может быть отрицательным", file=sys.stderr)
+        return 2
     proj = core.project_path(args.project)
     e = estimate(args.sources, args.searches, proj)
     print(render(e))

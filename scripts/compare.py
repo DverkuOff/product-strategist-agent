@@ -97,10 +97,10 @@ def agent_text(proj: Path) -> str:
     return "\n\n".join(p.read_text(encoding="utf-8") for p in docs)
 
 
-def ledger_time_cost(proj: Path) -> tuple[float, str]:
+def ledger_time_cost(proj: Path) -> tuple[float | None, str]:
     rows = core.read_ledger(proj)
     if not rows:
-        return 0.0, "нет записей (сквозной прогон в Claude Code ещё не записан)"
+        return None, "нет данных: сквозной прогон в Claude Code ещё не записан"
     total = sum(float(r.get("cost_usd") or 0) for r in rows)
     ts = sorted(datetime.fromisoformat(r["ts"]) for r in rows if r.get("ts"))
     span = (ts[-1] - ts[0]).total_seconds() / 60 if len(ts) > 1 else 0
@@ -149,7 +149,8 @@ def build(proj: Path) -> str:
     L.append(f"| Фактов, подтверждённых снимками источников | {len(vrep.get('ok', []))} из {vs.get('fact', 0)} | 0 (источников нет) |")
     for name in A["checks"]:
         L.append(f"| {name} | {yn(A['checks'][name])} | {yn(C['checks'][name])} |")
-    L.append(f"| Стоимость (оценка по прейскуранту API) | ${a_cost:.2f} | ${float(meta.get('cost_usd') or 0):.2f} |")
+    a_cost_s = f"${a_cost:.2f}" if a_cost is not None else "нет данных (журнал стоимости пуст: прогон не записан)"
+    L.append(f"| Стоимость (оценка по прейскуранту API) | {a_cost_s} | ${float(meta.get('cost_usd') or 0):.2f} |")
     L.append(f"| Время | {a_time} | {meta.get('duration_s', '?')} с генерации + проверка человеком: {meta.get('human_minutes_to_verify') or 'не замерено'} |")
     L += ["", "## Как читать",
           "- Чат не видел материалов задачи — так и выглядит исходный способ: правдоподобный текст без проверяемой опоры. Числа чата в основном — целевые значения и сегменты «из головы»; проверки показывают, что их нечем подтвердить, а не что они ложны.",
@@ -176,7 +177,11 @@ def main(argv=None) -> int:
     if not proj:
         print("Нет активной задачи", file=sys.stderr)
         return 2
-    md = build(proj)
+    try:
+        md = build(proj)
+    except SystemExit as e:  # нет baseline или документов агента — это ошибка, а не «сравнение готово»
+        print(e, file=sys.stderr)
+        return 2
     print(md)
     if not args.no_write:
         (proj / "out" / "compare.md").write_text(md, encoding="utf-8")

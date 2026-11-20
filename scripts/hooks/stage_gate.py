@@ -4,7 +4,9 @@
 - любой этап, если есть утверждения: verify_claims (факт без снимка → гипотеза, метки в out/ согласованы);
 - этапы options и дальше: decision_lint (≥3 вариантов, «Цена бездействия», вердикт с причиной, «Что заставит пересмотреть»;
   «делать» без проработанного варианта → «нужна ясность»);
-- этапы strategy и дальше, если есть out/comms-strategy.md: promise_lint (обещания опираются на свойства-факты).
+- этапы strategy и дальше: promise_lint (обещания опираются на свойства-факты); на strategy — если документ уже есть;
+- результаты пройденных этапов (research.md, options.md и решение, comms-strategy.md и реестр свойств,
+  validation-plan.md на done) обязательны: пустой этап не проходит ворота «✓».
 Нашли проблему → exit 2: Claude Code не завершает ход и передаёт агенту текст ошибок (stderr).
 Повторный стоп подряд (stop_hook_active) не блокируем, а показываем предупреждение РП — без бесконечного цикла.
 Значит, хук возвращает агента на исправление один раз за ход; незакрытые замечания РП видит в сообщении.
@@ -40,6 +42,7 @@ def run(proj) -> tuple[list[str], list[str]]:
         warnings.extend(f"claims: {w}" for w in rep["warnings"])
         if n:
             core.append_journal(proj, f"Stop-хук: понижено {n} утвержд. до гипотез")
+    problems.extend(f"этапы: {m}" for m in core.missing_artifacts(proj, stage=stage))
     if stage in CLAIM_STAGES and stage != "research":
         problems.extend(f"варианты: {e}" for e in decision_lint.check_options(proj))
         derrs, downs = decision_lint.check_decisions(proj)
@@ -47,7 +50,8 @@ def run(proj) -> tuple[list[str], list[str]]:
         decision_lint.apply_downgrades(proj, downs)
         problems.extend(f"решение {d}: вердикт «делать» понижен до «нужна ясность» ({why})" for d, why in downs)
         warnings.extend(f"варианты: {w}" for w in decision_lint.option_warnings(proj))
-    if stage in PROMISE_STAGES and (proj / "out" / "comms-strategy.md").exists():
+    # на strategy обещания проверяются, когда документ уже есть; после strategy его отсутствие — ошибка
+    if stage in PROMISE_STAGES and ((proj / "out" / "comms-strategy.md").exists() or stage != "strategy"):
         rep = promise_lint.lint(proj)
         for pr in rep["promises"]:
             for code, msg in pr["issues"]:

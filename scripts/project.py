@@ -176,6 +176,17 @@ def cmd_stage(args) -> int:
     proj = _proj_or_fail(args.slug)
     t = core.load_task(proj)
     prev = t.get("stage")
+    if prev in core.STAGES and args.stage != prev:
+        pi, ni = core.STAGES.index(prev), core.STAGES.index(args.stage)
+        if ni > pi + 1:
+            print(f"Через этапы не перескакиваем: из {prev} можно перейти в {core.STAGES[pi + 1]} или вернуться назад "
+                  f"(этап {args.stage} — после {', '.join(core.STAGES[pi + 1:ni])})", file=sys.stderr)
+            return 2
+        if ni > pi:
+            miss = core.missing_artifacts(proj, stage=args.stage, only={prev})
+            if miss:
+                print("Этап не завершён: " + "; ".join(m.split(": ", 1)[1] for m in miss), file=sys.stderr)
+                return 2
     done = t.setdefault("stages_done", [])
     if prev and prev in core.STAGES and prev != args.stage and prev not in done \
             and core.STAGES.index(args.stage) > core.STAGES.index(prev):

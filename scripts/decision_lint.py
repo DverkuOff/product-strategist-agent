@@ -11,6 +11,7 @@ state/decisions.md (для действующих решений):
   D2 нет поля «Что заставит пересмотреть» (kill-критерии; идея pm-brain «what would reopen them»);
      на этапах validation и done заглушка «будут в плане проверки» уже не годится;
   O6/O7 (предупреждения) нет раздела «Возражения критика» от субагента critic или сильное возражение без ответа автора;
+  A0 этап options пройден (task.json), а out/options.md нет или в state/decisions.md нет ни одного решения;
   D3 вердикт «делать» без проработанного варианта (вариант из options.md с условиями «должно быть правдой»,
      возражениями и метками утверждений) и без оснований → понижается до «нужна ясность» (--fix пишет в файл).
 
@@ -181,7 +182,7 @@ def main(argv=None) -> int:
     if not proj:
         print("Нет активной задачи", file=sys.stderr)
         return 2
-    errs = check_options(proj)
+    errs = core.missing_artifacts(proj, only={"options"}) + check_options(proj)
     derrs, downs = check_decisions(proj)
     errs += derrs
     if args.fix:
