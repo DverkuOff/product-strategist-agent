@@ -91,7 +91,7 @@ def check(proj: Path, today: dt.date | None = None) -> list[str]:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     args = ap.parse_args(argv)
     proj = core.project_path(args.project)

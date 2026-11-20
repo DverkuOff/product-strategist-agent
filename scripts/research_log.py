@@ -17,7 +17,7 @@ import core  # noqa: E402
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("action", choices=["query", "discard", "note", "open"])
     ap.add_argument("what")

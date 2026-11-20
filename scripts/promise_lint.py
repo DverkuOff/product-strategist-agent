@@ -350,7 +350,7 @@ def render(rep: dict) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--matrix", action="store_true")

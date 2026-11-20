@@ -68,7 +68,7 @@ def render(s: dict, md: bool) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("--md", action="store_true", help="вывод таблицами Markdown")
     args = ap.parse_args(argv)

@@ -113,7 +113,7 @@ def render(e: dict) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("--sources", type=int, required=True, help="сколько источников планируем прочитать")
     ap.add_argument("--searches", type=int, default=0, help="сколько поисковых запросов")

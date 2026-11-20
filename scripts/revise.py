@@ -113,11 +113,11 @@ def cmd_finish(proj: Path, args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("start"); p.add_argument("doc"); p.add_argument("--section", required=True); p.set_defaults(fn=cmd_start)
-    p = sub.add_parser("finish"); p.add_argument("--reason", required=True); p.add_argument("--allow-other", action="store_true"); p.set_defaults(fn=cmd_finish)
+    p = sub.add_parser("start", allow_abbrev=False); p.add_argument("doc"); p.add_argument("--section", required=True); p.set_defaults(fn=cmd_start)
+    p = sub.add_parser("finish", allow_abbrev=False); p.add_argument("--reason", required=True); p.add_argument("--allow-other", action="store_true"); p.set_defaults(fn=cmd_finish)
     args = ap.parse_args(argv)
     proj = core.project_path(args.project)
     if not proj:

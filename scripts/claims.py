@@ -159,14 +159,14 @@ def cmd_human(proj: Path, args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("add"); p.add_argument("--json", default=None); p.set_defaults(fn=cmd_add)
-    p = sub.add_parser("list"); p.add_argument("--kind"); p.add_argument("--all", action="store_true"); p.set_defaults(fn=cmd_list)
-    p = sub.add_parser("supersede"); p.add_argument("id"); p.add_argument("--by", required=True); p.add_argument("--reason", required=True); p.set_defaults(fn=cmd_supersede)
-    p = sub.add_parser("retract"); p.add_argument("id"); p.add_argument("--reason", required=True); p.set_defaults(fn=cmd_retract)
-    p = sub.add_parser("human-verified"); p.add_argument("id"); p.add_argument("--note", required=True); p.set_defaults(fn=cmd_human)
+    p = sub.add_parser("add", allow_abbrev=False); p.add_argument("--json", default=None); p.set_defaults(fn=cmd_add)
+    p = sub.add_parser("list", allow_abbrev=False); p.add_argument("--kind"); p.add_argument("--all", action="store_true"); p.set_defaults(fn=cmd_list)
+    p = sub.add_parser("supersede", allow_abbrev=False); p.add_argument("id"); p.add_argument("--by", required=True); p.add_argument("--reason", required=True); p.set_defaults(fn=cmd_supersede)
+    p = sub.add_parser("retract", allow_abbrev=False); p.add_argument("id"); p.add_argument("--reason", required=True); p.set_defaults(fn=cmd_retract)
+    p = sub.add_parser("human-verified", allow_abbrev=False); p.add_argument("id"); p.add_argument("--note", required=True); p.set_defaults(fn=cmd_human)
     args = ap.parse_args(argv)
     proj = core.project_path(args.project)
     if not proj:
