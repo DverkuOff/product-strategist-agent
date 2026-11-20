@@ -46,21 +46,33 @@ CHECKS = [
 ]
 
 
+def _context(line: str, frag: str, width: int = 40) -> str:
+    """Фрагмент строки вокруг совпадения: жюри видит само слово, а не начало строки."""
+    i = promise_lint.normalize(line).lower().find(frag.lower())
+    if i < 0:
+        return line.strip()[:2 * width]
+    a, b = max(0, i - width), min(len(line), i + len(frag) + width)
+    return ("…" if a else "") + line[a:b].strip() + ("…" if b < len(line) else "")
+
+
 def risky(text: str) -> list[str]:
-    """Рискованные формулировки вне разделов про отказы и риски и не под отрицанием (одинаково для обоих текстов)."""
+    """Рискованные формулировки (та же логика, что в promise_lint: отрицание, устойчивые обороты) вне разделов про
+    отказы и риски, вне цитат возражений; одинаково для обоих текстов. «Все / любой» здесь не считаются: в общем
+    тексте это не обещание, а риск обещания проверяет promise_lint по реестру свойств."""
     out = []
     section = ""
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             section = line
             continue
-        if promise_lint.SKIP_SECTIONS.search(section):
+        if promise_lint.SKIP_SECTIONS.search(section) or promise_lint.MATRIX_SECTION.search(section):
             continue
-        for rx, label in promise_lint._RISKY:  # noqa: SLF001 — общий словарь формулировок
-            for m in rx.finditer(line):
-                if NEGATION.search(line[: m.start()]):
-                    continue
-                out.append(f"{label}: «{line.strip()[:90]}»")
+        clean = re.sub(r"«[^»]*»|\"[^\"]*\"", lambda m: " " * len(m.group(0)), line)  # цитаты клиентов и возражений
+        for label, frag in promise_lint.risky_phrases(clean, affirmative_only=True, quantifiers=False):
+            pos = promise_lint.normalize(clean).lower().find(frag.lower())
+            if pos >= 0 and NEGATION.search(clean[:pos]):
+                continue
+            out.append(f"{label}: «{frag}» — {_context(line, frag)}")
     return out
 
 
