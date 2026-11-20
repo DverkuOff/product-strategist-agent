@@ -36,6 +36,8 @@
       "Bash(python3 -m unittest discover -s tests)",
       "Bash(python3 -m unittest discover -s tests -v)",
       "Bash(python3 -m unittest discover -s tests -p *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
       "Bash(ls *)",
       "Bash(wc *)",
       "Bash(git status)",

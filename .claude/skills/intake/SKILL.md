@@ -2,7 +2,7 @@
 name: intake
 description: Этап 1 — постановка задачи руководителя продукта. Превращает размытый запрос («почему падает удержание», «кому продавать», «что сказать аудитории») в вопрос решения с целью, получателем, сроком, ограничениями и доступными данными. Используй в начале новой задачи или когда РП меняет постановку.
 when_to_use: «новая задача», «помоги разобраться», «нужна стратегия», размытый продуктовый вопрос; этап intake в state/task.json
-allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/project.py status*) Bash(python3 scripts/project.py stage *) Bash(python3 scripts/project.py set *) Bash(python3 scripts/project.py wait *) Bash(python3 scripts/project.py log *) Bash(python3 scripts/project.py new *) Bash(python3 scripts/project.py list*) Bash(python3 scripts/project.py use *) Bash(python3 scripts/fetch_source.py projects/*) Read Write Edit Glob
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/project.py status*) Bash(python3 scripts/project.py stage *) Bash(python3 scripts/project.py set *) Bash(python3 scripts/project.py wait *) Bash(python3 scripts/project.py log *) Bash(python3 scripts/project.py new *) Bash(python3 scripts/project.py list*) Bash(python3 scripts/project.py use *) Bash(python3 scripts/fetch_source.py projects/*) Bash(python3 scripts/table_calc.py *) Bash(python3 -c *) Bash(python3 projects/*/out/calc-*.py) Bash(python3 projects/*/out/calc-*.py *) Read Write Edit Glob
 ---
 
 # Этап 1. Постановка задачи
