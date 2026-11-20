@@ -2,7 +2,7 @@
 name: validation
 description: Этап 5 — план проверки выбранного решения и запись решения. Для ключевых гипотез и тестов сообщений — ожидаемое изменение, с чем сравниваем, срок наблюдения, нежелательные последствия (guardrails), критерии успеха и отмены; решение в state/decisions.md с основаниями и kill-критериями; итоговая сводка для получателя.
 when_to_use: этап validation в state/task.json; «как проверить», «план пилота», «метрики успеха»
-allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/*) Read Write Edit Glob Grep
+allowed-tools: Bash(python3 "${CLAUDE_PROJECT_DIR}/scripts/project.py" status *) Bash(python3 scripts/project.py status*) Bash(python3 scripts/project.py stage *) Bash(python3 scripts/project.py set *) Bash(python3 scripts/project.py wait *) Bash(python3 scripts/project.py log *) Bash(python3 scripts/project.py new *) Bash(python3 scripts/project.py list*) Bash(python3 scripts/project.py use *) Bash(python3 scripts/claims.py add*) Bash(python3 scripts/claims.py list*) Bash(python3 scripts/claims.py supersede *) Bash(python3 scripts/claims.py retract *) Bash(python3 scripts/fetch_source.py http*) Bash(python3 scripts/fetch_source.py projects/*) Bash(python3 scripts/verify_claims.py*) Bash(python3 scripts/promise_lint.py*) Bash(python3 scripts/decision_lint.py*) Bash(python3 scripts/compare.py*) Bash(python3 scripts/revisit.py*) Bash(python3 scripts/cost_report.py*) Bash(python3 scripts/estimate.py *) Bash(python3 scripts/research_log.py *) Bash(python3 scripts/revise.py *) Read Write Edit Glob Grep
 ---
 
 # Этап 5. План проверки и решение
