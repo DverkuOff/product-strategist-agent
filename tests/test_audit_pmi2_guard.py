@@ -175,3 +175,26 @@ class Pmi2Guard(Base):
         self.assertEqual(self.guard("Bash", {"command": f"python3 {O}/calc-bad.py"}), "deny")
         self.assertEqual(self.guard("Bash", {"command": f"python3 {O}/calc-missing.py"}), "deny")
         self.assertEqual(self.guard("Bash", {"command": f"printf 'import os\\n' >> {O}/calc-arpu.py && python3 {O}/calc-arpu.py"}), "deny")
+
+
+class SubagentDetection(Base):  # «проверить вживую» п. 6: agent_type/agent_id и запасной путь по стенограмме
+    def test_fields_and_transcript_fallback(self):
+        snap = str(sorted((self.proj / "materials").glob("M-10-*.md"))[0])
+        self.assertEqual(self.guard("Read", {"file_path": snap}), "deny")
+        e = dict(os.environ, CLAUDE_PROJECT_DIR=str(self.tmp))
+        e.pop("STRATEGIST_MAINTAINER", None)
+
+        def call(extra):
+            inp = {"tool_name": "Read", "tool_input": {"file_path": snap}, "cwd": str(self.tmp), **extra}
+            p = subprocess.run([sys.executable, str(SCRIPTS / "hooks" / "guard_instructions.py")], input=json.dumps(inp),
+                               capture_output=True, text=True, env=e)
+            return "deny" if '"deny"' in p.stdout else "allow"
+        self.assertEqual(call({"agent_id": "a1b2c3"}), "allow")
+        self.assertEqual(call({"agent_type": "source-reader"}), "allow")
+        sess = self.tmp / "sess"
+        (sess / "s1" / "subagents").mkdir(parents=True)
+        (sess / "s1.jsonl").write_text("{}\n", encoding="utf-8")
+        (sess / "s1" / "subagents" / "agent-x.jsonl").write_text('{"type":"tool_use","id":"toolu_01ABCDEFGH"}\n', encoding="utf-8")
+        base = {"transcript_path": str(sess / "s1.jsonl")}
+        self.assertEqual(call({**base, "tool_use_id": "toolu_01ABCDEFGH"}), "allow")
+        self.assertEqual(call({**base, "tool_use_id": "toolu_01ZZZZZZZZ"}), "deny")

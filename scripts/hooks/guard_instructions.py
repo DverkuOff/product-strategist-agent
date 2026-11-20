@@ -44,7 +44,8 @@
 Команды «только для человека» (claims.py human-verified, project.py approve-plan): точная форма → хук сам просит
 подтверждение у РП (permissionDecision «ask»); в режимах без вопросов (bypassPermissions, dontAsk, auto) и в любой
 другой форме — отказ.
-Карантин: главный контекст (во входе хука нет agent_type и agent_id — так Claude Code помечает вызовы субагентов)
+Карантин: главный контекст (во входе хука нет agent_type и agent_id — так Claude Code помечает вызовы субагентов;
+запасной признак — tool_use_id в стенограмме субагента <сессия>/subagents/agent-*.jsonl)
 не читает содержимое снимков materials/, страниц-ловушек traps/ и входящих inbox/ (в том числе их копий в
 tests/fixtures/) — ни Read, ни Grep, ни cat/grep -r/git grep в Bash. Grep без пути хук сужает сам: добавляет
 исключение этих папок (updatedInput). Список файлов (ls, Glob) можно; сохранить снимок — scripts/fetch_source.py.
@@ -1521,8 +1522,31 @@ def log_block(r: Path, tool: str, target: str, why: str, event: str) -> None:
 
 
 def is_subagent(inp: dict) -> bool:
-    """Вызов из субагента: Claude Code кладёт во вход хука agent_id и agent_type (документация hooks)."""
-    return bool(inp.get("agent_type") or inp.get("agent_id"))
+    """Вызов из субагента: Claude Code кладёт во вход хука agent_id и agent_type (документация hooks: «present when
+    … the hook fires inside a subagent»). Запасной путь для версий без этих полей: вызов с этим tool_use_id записан
+    в стенограмме субагента <сессия>/subagents/agent-*.jsonl рядом с transcript_path. Не нашли — главный контекст
+    (карантин действует: лучше лишний отказ, чем снимок в контексте оркестратора)."""
+    if inp.get("agent_type") or inp.get("agent_id"):
+        return True
+    return subagent_by_transcript(inp)
+
+
+def subagent_by_transcript(inp: dict) -> bool:
+    tid, tp = str(inp.get("tool_use_id") or ""), str(inp.get("transcript_path") or "")
+    if not re.fullmatch(r"[\w\-]{8,}", tid) or not tp.endswith(".jsonl"):
+        return False
+    d = Path(tp[: -len(".jsonl")]) / "subagents"
+    try:
+        files = sorted(d.glob("agent-*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)[:20]
+        for f in files:
+            with f.open("rb") as fh:
+                size = f.stat().st_size
+                fh.seek(max(0, size - 400_000))
+                if tid.encode() in fh.read():
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 def grep_rewrite(ti: dict, r: Path, cwd: Path) -> dict | None:
