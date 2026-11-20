@@ -474,8 +474,17 @@ UGC_HINT = re.compile(r"forum|форум|otzyv|отзыв|otzovik|irecommend|pik
 AD_HINT = re.compile(r"\bпромо|реклам|/promo|/advert|utm_source=", re.I)
 
 
-def guess_source_type(url: str = "", title: str = "", origin: str = "web") -> str:
-    """Тип источника по адресу и названию, если агент его не указал."""
+RP_DOC_SUFFIXES = {".xlsx", ".xls", ".csv", ".tsv", ".docx", ".doc", ".pdf", ".pptx", ".odt", ".ods", ".json"}
+# Признаки форума, блога и отзывов в самой странице (для файлов из inbox/ и traps/, у которых нет адреса)
+UGC_CONTENT = re.compile(r"class=[\"'][^\"']*\b(post|comment|reply|review|forum|topic|thread)\b|форум|модератор|"
+                         r"\bотзыв|комментари|\bблог|ответить\s+на|\bгость_|зарегистрирован", re.I)
+
+
+def guess_source_type(url: str = "", title: str = "", origin: str = "web", suffix: str = "", content: str = "") -> str:
+    """Тип источника по адресу, названию и (для локальных файлов) по виду файла и признакам форума в нём.
+
+    Файл из inbox/ — материал РП (rp) только если это таблица или документ (xlsx, csv, docx, pdf …); сохранённая
+    страница (html, md, txt) — unknown, а с признаками форума, блога или отзывов — ugc."""
     if origin == "synthetic":
         return "synthetic"
     hay = f"{url} {title}"
@@ -483,9 +492,26 @@ def guess_source_type(url: str = "", title: str = "", origin: str = "web") -> st
         return "ugc"
     if AD_HINT.search(hay):
         return "advertising"
-    if origin in ("inbox",) and not str(url).startswith("http"):
-        return "rp"
+    if origin in ("inbox", "traps") and not str(url).startswith("http"):
+        if content and UGC_CONTENT.search(content[:200_000]):
+            return "ugc"
+        if origin == "inbox" and suffix.lower() in RP_DOC_SUFFIXES:
+            return "rp"
+    elif origin in ("inbox", "traps") and content and UGC_CONTENT.search(content[:200_000]):
+        return "ugc"
     return "unknown"
+
+
+def source_type_allowed(auto: str, requested: str) -> bool:
+    """Агент может понизить тип относительно автоопределения, но не повысить: форум (ugc) или рекламу нельзя
+    объявить СМИ или официальным источником, синтетику — ничем другим."""
+    if not requested or requested == auto:
+        return True
+    if auto == "synthetic":
+        return False
+    if auto in WEAK_SOURCE_TYPES:
+        return requested in WEAK_SOURCE_TYPES
+    return True
 
 
 def material_source_type(proj: Path, mid: str, mat: dict | None = None, manifest: dict | None = None) -> str:

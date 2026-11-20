@@ -15,7 +15,9 @@ PreToolUse-хук запрещает агенту править materials/ (и�
 Локальные файлы — только из projects/<задача>/inbox/ (их кладёт РП), projects/<задача>/traps/ (учебные
 страницы-ловушки демо) или синтетика из папки задачи.
 Веб-источники сохраняются только после утверждения плана исследования РП (approve-plan) — на любом этапе.
-Тип источника (--source-type: official, media, research, ugc, advertising, rp) пишется в MANIFEST.json; если
+Тип источника (--source-type: official, media, research, ugc, advertising, rp) пишется в MANIFEST.json. Агент может
+только понизить тип относительно автоопределения (форум по адресу или по содержимому нельзя объявить СМИ); файл из
+inbox/ — rp, только если это таблица или документ (xlsx, csv, docx, pdf), сохранённая страница — unknown или ugc. Если
 его не указать, он угадывается по адресу и названию (форум, блог, отзывы → ugc). Факт, у которого все
 источники ugc или advertising, verify_claims понижает до гипотезы.
 """
@@ -295,7 +297,7 @@ def save_snapshot(proj: Path, *, text: str, raw: bytes, title: str, url: str, ki
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("source", nargs="?", help="URL или путь к файлу")
     ap.add_argument("--rebuild-manifest", action="store_true",
                     help="сопровождающему: записать текущие sha256 всех снимков в materials/MANIFEST.json")
@@ -377,8 +379,15 @@ def main(argv=None) -> int:
             core.log_research(proj, "note", src, f"повтор: уже есть {dup}, новый снимок не создан")
             print(f"Источник уже есть: {dup} (тот же адрес или то же содержимое). Новый снимок не создан.")
             return 0
-        stype = args.source_type or core.guess_source_type(url, args.title or title or (src if not is_web else ""),
-                                                           "web" if is_web else (origin if kind != "synthetic" else "synthetic"))
+        auto = core.guess_source_type(url, " ".join(x for x in (args.title, title, src if not is_web else "") if x),
+                                      "web" if is_web else (origin if kind != "synthetic" else "synthetic"),
+                                      suffix="" if is_web else Path(src).suffix,
+                                      content="" if is_web else raw[:400_000].decode("utf-8", errors="replace"))
+        stype = args.source_type or auto
+        if not core.source_type_allowed(auto, stype):
+            print(f"Тип источника {stype} не принят: по адресу, названию или содержимому это {auto} "
+                  f"({core.SOURCE_TYPES[auto]}) — тип можно только понизить, не повысить.", file=sys.stderr)
+            stype = auto
         note = "; ".join(x for x in (args.note, f"обрезано до {MAX_BYTES // 1_000_000} МБ" if truncated else "") if x)
         out = save_snapshot(proj, text=text, raw=raw, title=args.title or title or src, url=url, kind=kind, note=note,
                             publisher=args.publisher, published=args.published,

@@ -13,6 +13,8 @@
      «без исключений», «100%») должны стоять в самой цитате, а не где-то в снимке;
   8. хотя бы один источник факта — не форум, блог, отзывы, соцсети (ugc) и не реклама продавца (advertising):
      тип источника пишет fetch_source.py в materials/MANIFEST.json (агент его не меняет) — иначе понижение;
+     числа, имена и квантификаторы ищутся только в цитатах СИЛЬНЫХ источников: второй источник из СМИ не делает
+     фактом цифру, которая есть только на форуме;
   6. «проверено человеком» — только если в state/human.jsonl есть запись РП с хэшем текущего текста
      (команду claims.py human-verified агент сам выполнить не может: Claude Code спрашивает РП);
      пометка verified в claims.jsonl без такой записи игнорируется.
@@ -236,8 +238,15 @@ def check(proj: Path) -> dict:
                                      + ", ".join(f"{m}: {t}" for m, t in types)
                                      + "): для факта нужен первичный источник, исследование или СМИ"))
             continue
-        miss = missing_in_evidence(c.get("text", ""), "\n".join(snaps), "\n".join(fulls))
-        qmiss = missing_in_quotes(c.get("text", ""), "\n".join(quotes))
+        # числа, имена и квантификаторы — только из сильных источников: слабый (форум, реклама) рядом с СМИ не
+        # «отмывает» свою цифру («99%» с форума + «большинство» из СМИ → 99% не подтверждено)
+        strong = [i for i, (_, t) in enumerate(types) if t not in core.WEAK_SOURCE_TYPES]
+        miss = missing_in_evidence(c.get("text", ""), "\n".join(snaps[i] for i in strong), "\n".join(fulls[i] for i in strong))
+        qmiss = missing_in_quotes(c.get("text", ""), "\n".join(quotes[i] for i in strong))
+        if len(strong) < len(types) and (miss or qmiss):
+            weak = ", ".join(f"{m}: {t}" for m, t in types if t in core.WEAK_SOURCE_TYPES)
+            miss = [f"{x} (есть только в слабом источнике {weak})" for x in miss]
+            qmiss = [f"{x} (есть только в слабом источнике {weak})" for x in qmiss]
         if miss:
             rep["downgrade"].append((cid, "not_in_snapshot", "нет в предложении цитаты: " + ", ".join(miss)))
         elif qmiss:
@@ -318,7 +327,7 @@ def render(rep: dict, fixed: bool) -> str:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("--fix", action="store_true")
     ap.add_argument("--json", action="store_true")
