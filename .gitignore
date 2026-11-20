@@ -49,3 +49,6 @@ projects/*/materials/.lock
 projects/.cost-seen.json
 projects/.cost-transcripts.json
 projects/.cost.lock
+
+# Проект видео-обзора HyperFrames (исходники, рендеры, node_modules): в git не идёт, видео — в материалах сдачи
+pitch/overview/
