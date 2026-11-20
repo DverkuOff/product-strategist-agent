@@ -29,6 +29,10 @@
       "Bash(python3 scripts/decision_lint.py)",
       "Bash(python3 scripts/estimate.py *)",
       "Bash(python3 scripts/revise.py *)",
+      "Bash(python3 scripts/table_calc.py *)",
+      "Bash(python3 -c *)",
+      "Bash(python3 projects/*/out/calc-*.py)",
+      "Bash(python3 projects/*/out/calc-*.py *)",
       "Bash(python3 -m unittest discover -s tests)",
       "Bash(python3 -m unittest discover -s tests -v)",
       "Bash(python3 -m unittest discover -s tests -p *)",
@@ -36,8 +40,7 @@
       "Bash(wc *)",
       "Bash(git status)",
       "Bash(git log *)",
-      "Bash(git diff *)",
-      "Bash(uvx markitdown *)"
+      "Bash(git diff *)"
     ],
     "ask": [
       "Bash(python3 scripts/claims.py human-verified *)",
@@ -60,7 +63,22 @@
       "Edit(projects/**/.cursor/**)",
       "Edit(**/CLAUDE.local.md)",
       "Edit(**/.mcp.json)",
-      "Bash(python3 scripts/fetch_source.py --rebuild-manifest*)"
+      "Bash(python3 scripts/fetch_source.py --rebuild-manifest*)",
+      "Bash(git diff *--output*)",
+      "Bash(git log *--output*)",
+      "Bash(git show *--output*)",
+      "Bash(git diff *--ext-diff*)",
+      "Bash(git log *--ext-diff*)",
+      "Bash(git -c *)",
+      "Bash(git merge-file *)",
+      "Bash(git sparse-checkout *)",
+      "Bash(git apply *)",
+      "Bash(git config *)",
+      "Bash(uvx markitdown * -p*)",
+      "Bash(security *)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.config/**)"
     ],
     "disableBypassPermissionsMode": "disable"
   },
@@ -155,8 +173,7 @@
     "excludedCommands": [
       "python3 scripts/fetch_source.py *",
       "python3 scripts/claims.py human-verified *",
-      "python3 scripts/project.py approve-plan*",
-      "uvx markitdown *"
+      "python3 scripts/project.py approve-plan*"
     ],
     "filesystem": {
       "denyWrite": [
@@ -178,13 +195,21 @@
         "./projects/*/traps",
         "./projects/demo-zashchita-blizkih/materials",
         "./projects/demo-zashchita-blizkih/inbox",
-        "./projects/demo-zashchita-blizkih/traps"
+        "./projects/demo-zashchita-blizkih/traps",
+        "./projects/*/CLAUDE.md",
+        "./projects/*/AGENTS.md",
+        "./projects/*/.claude",
+        "./projects/*/.mcp.json",
+        "./projects/demo-zashchita-blizkih/CLAUDE.md",
+        "./projects/demo-zashchita-blizkih/state/human.jsonl"
       ],
       "denyRead": [
         "./.env",
         "./.env.*",
         "~/.ssh",
-        "~/.aws"
+        "~/.aws",
+        "~/.claude.json",
+        "~/.claude/.credentials.json"
       ]
     }
   }
