@@ -1,6 +1,8 @@
 """Общее для тестов: временный репозиторий с копией эталонной задачи (tests/fixtures/demo)."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -22,6 +24,10 @@ class TempRepoCase(unittest.TestCase):
     slug = "demo"
 
     def setUp(self):
+        # вывод скриптов (отчёты verify_claims, compare.md) не нужен в логе тестов: жюри принимает его за падения
+        self._quiet = contextlib.ExitStack()
+        self._quiet.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        self._quiet.enter_context(contextlib.redirect_stderr(io.StringIO()))
         self.tmp = Path(tempfile.mkdtemp(prefix="strategist-test-"))
         (self.tmp / "AGENTS.md").write_text("# test\n", encoding="utf-8")
         shutil.copytree(REPO / "projects" / "_template", self.tmp / "projects" / "_template")
@@ -34,6 +40,7 @@ class TempRepoCase(unittest.TestCase):
         os.environ.pop("STRATEGIST_MAINTAINER", None)
 
     def tearDown(self):
+        self._quiet.close()
         for k, v in self._env.items():
             if v is None:
                 os.environ.pop(k, None)
