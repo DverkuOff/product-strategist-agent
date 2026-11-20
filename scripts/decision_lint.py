@@ -34,7 +34,11 @@ STATUS_QUO = re.compile(r"оставить как есть|ничего не д�
 MARK = re.compile(r"\[(факт|гипотеза|прогноз|синтетика)[^\]\n]*?C-\d+\]", re.I)
 VERDICTS = ("делать", "нужна ясность", "стоп")
 REJECTED = re.compile(r"\bотброшен|\bотвергнут", re.I)
-PLACEHOLDER = re.compile(r"будут в плане|позже|TBD|\.\.\.|…", re.I)
+# Заглушка — пустое поле, многоточие или TODO вместо текста, строка из шаблона, «будут в плане проверки».
+# Многоточие ВНУТРИ текста («сравнение до… после») — не заглушка.
+PLACEHOLDER = re.compile(r"будут\s+в\s+плане|(определим|уточним|решим|заполним|допишем)\s+позже|\bTBD\b|\bTODO\b|"
+                         r"^\s*(\.\.\.|…|-|—|\?)?\s*$|при каком результате проверки или каком новом факте", re.I)
+DASH = re.compile(r"\s[-–]{1,2}\s")  # «делать - причина», «делать – причина», «делать -- причина» = длинное тире
 
 
 def parse_variants(md: str) -> dict[str, dict]:
@@ -130,16 +134,22 @@ def check_decisions(proj: Path) -> tuple[list[str], list[tuple[str, str]]]:
             continue
         did = d["id"]
         verdict = field(d, "вердикт")
+        m = DASH.search(verdict or "")
+        if m and ("—" not in verdict or m.start() < verdict.index("—")):
+            verdict = verdict[: m.start()] + " — " + verdict[m.end():]
         head = verdict.split("—")[0].strip().lower() if verdict else ""
         if head not in VERDICTS:
-            errs.append(f"D1 {did}: вердикт должен быть «делать», «нужна ясность» или «стоп» (сейчас: «{verdict or 'нет'}»)")
+            errs.append(f"D1 {did}: вердикт должен быть «делать», «нужна ясность» или «стоп», затем тире « — » и причина "
+                        f"(сейчас: «{verdict or 'нет'}»)")
         elif "—" not in verdict or not verdict.split("—", 1)[1].strip():
-            errs.append(f"D1 {did}: у вердикта нет причины после «—»")
+            errs.append(f"D1 {did}: у вердикта нет причины после тире («делать — потому что …»)")
         reopen = field(d, "что заставит пересмотреть", "kill")
         if not reopen:
             errs.append(f"D2 {did}: нет поля «Что заставит пересмотреть» (kill-критерии)")
         elif stage in {"validation", "done"} and PLACEHOLDER.search(reopen):
-            errs.append(f"D2 {did}: «Что заставит пересмотреть» — заглушка; на этапе {stage} нужны конкретные kill-критерии из плана проверки")
+            m = PLACEHOLDER.search(reopen)
+            errs.append(f"D2 {did}: «Что заставит пересмотреть» — заглушка («{m.group(0).strip() or 'пусто'}»); на этапе {stage} "
+                        "нужны конкретные kill-критерии из плана проверки")
         if head == "делать":
             why = []
             vid = re.search(r"\b([A-Za-zА-Яа-я0-9])\b", field(d, "вариант"))
@@ -174,7 +184,7 @@ def apply_downgrades(proj: Path, downs: list[tuple[str, str]]) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     ap.add_argument("--project", default=None)
     ap.add_argument("--fix", action="store_true")
     args = ap.parse_args(argv)
