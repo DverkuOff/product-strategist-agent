@@ -128,6 +128,45 @@ def append_journal(proj: Path, text: str) -> None:
         fh.write(f"- {stamp} · {text}\n")
 
 
+# ---------- обязательные результаты этапов ----------
+# Этап считается пройденным, только если его результат есть: иначе ворота качества проверяли бы пустое место.
+STAGE_ARTIFACTS = {
+    "research": [("out/research.md", "отчёт исследования")],
+    "options": [("out/options.md", "варианты"), ("state/decisions.md", "запись решения D-xxx")],
+    "strategy": [("out/comms-strategy.md", "коммуникационная стратегия"), ("state/product-properties.json", "реестр свойств")],
+    "validation": [("out/validation-plan.md", "план проверки")],
+}
+
+
+def stages_passed(stage: str | None) -> list[str]:
+    return STAGES[: STAGES.index(stage)] if stage in STAGES else []
+
+
+def missing_artifacts(proj: Path, stage: str | None = None, only: set[str] | None = None) -> list[str]:
+    """Результаты пройденных этапов, которых нет или которые пусты (этап берётся из task.json)."""
+    stage = stage if stage is not None else load_task(proj).get("stage")
+    out = []
+    for s in stages_passed(stage):
+        if only and s not in only:
+            continue
+        for rel, what in STAGE_ARTIFACTS.get(s, []):
+            f = proj / rel
+            text = f.read_text(encoding="utf-8") if f.exists() else ""
+            if rel.endswith("decisions.md"):
+                ok = re.search(r"^##\s+D-\d+", text, re.M) is not None
+            elif rel.endswith(".json"):
+                try:
+                    data = json.loads(text) if text.strip() else {}
+                except json.JSONDecodeError:
+                    data = {}
+                ok = bool(data.get("properties") if isinstance(data, dict) else data)
+            else:
+                ok = bool(text.strip())
+            if not ok:
+                out.append(f"A0 этап {s} пройден (сейчас {stage}), но нет результата: {rel} ({what})")
+    return out
+
+
 # ---------- материалы (снимки) ----------
 
 FRONT_RE = re.compile(r"^---\n(.*?)\n---\n?", re.S)
@@ -402,13 +441,61 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def manifest_add(proj: Path, mid: str, path: Path, final_url: str = "") -> None:
+def manifest_add(proj: Path, mid: str, path: Path, final_url: str = "", source_type: str = "") -> None:
+    """Записать sha256 снимка; final_url и source_type прежней записи сохраняются, если новых не передали."""
     f = proj / "materials" / MANIFEST
     data = read_json(f, {}) or {}
+    old = data.get(mid) or {}
     data[mid] = {"file": Path(path).name, "sha256": file_sha256(path), "saved_at": now_iso()}
-    if final_url:
-        data[mid]["final_url"] = final_url
+    if final_url or old.get("final_url"):
+        data[mid]["final_url"] = final_url or old["final_url"]
+    if source_type or old.get("source_type"):
+        data[mid]["source_type"] = source_type or old["source_type"]
     write_json(f, dict(sorted(data.items())))
+
+
+# ---------- тип источника (надёжность) ----------
+# Задаётся при сохранении снимка (fetch_source.py --source-type, иначе — по адресу и названию) и хранится в
+# materials/MANIFEST.json, который агент изменить не может. verify_claims не даёт стать фактом утверждению,
+# у которого все источники — форум, блог, отзывы, соцсети (ugc) или реклама продавца (advertising).
+SOURCE_TYPES = {
+    "official": "официальный: компания о себе, регулятор, госстатистика, отчётность",
+    "media": "СМИ, отраслевое издание",
+    "research": "исследование, аналитика с методикой",
+    "ugc": "форум, блог, отзывы, соцсети",
+    "advertising": "реклама, промо-материал продавца",
+    "rp": "материал РП (выгрузка, документ)",
+    "synthetic": "синтетика",
+    "unknown": "не указан",
+}
+WEAK_SOURCE_TYPES = {"ugc", "advertising"}
+UGC_HINT = re.compile(r"forum|форум|otzyv|отзыв|otzovik|irecommend|pikabu|reddit|livejournal|dzen\.ru|zen\.yandex|"
+                      r"t\.me/|vk\.com|ok\.ru|youtube|tiktok|\bblog|блог|/comments?/|комментари", re.I)
+AD_HINT = re.compile(r"\bпромо|реклам|/promo|/advert|utm_source=", re.I)
+
+
+def guess_source_type(url: str = "", title: str = "", origin: str = "web") -> str:
+    """Тип источника по адресу и названию, если агент его не указал."""
+    if origin == "synthetic":
+        return "synthetic"
+    hay = f"{url} {title}"
+    if UGC_HINT.search(hay):
+        return "ugc"
+    if AD_HINT.search(hay):
+        return "advertising"
+    if origin in ("inbox",) and not str(url).startswith("http"):
+        return "rp"
+    return "unknown"
+
+
+def material_source_type(proj: Path, mid: str, mat: dict | None = None, manifest: dict | None = None) -> str:
+    """Тип источника снимка: из MANIFEST.json (его агент не меняет), иначе из frontmatter, иначе unknown."""
+    if manifest is None:
+        manifest = read_json(proj / "materials" / MANIFEST, {}) or {}
+    t = (manifest.get(mid) or {}).get("source_type")
+    if not t and mat:
+        t = (mat.get("meta") or {}).get("source_type")
+    return t if t in SOURCE_TYPES else "unknown"
 
 
 def manifest_check(proj: Path) -> tuple[dict[str, str], list[str]]:

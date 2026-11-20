@@ -58,6 +58,16 @@ class FetchAudit(TempRepoCase):
     def tearDownClass(cls):
         cls.srv.shutdown()
 
+    def setUp(self):
+        super().setUp()
+        # ПМИ Д-9: веб-источник сохраняется только после утверждения плана РП, на любом этапе (эталон — validation).
+        # Без этого шага все проверки ниже упирались бы в отказ плана (код 3), а не в SSRF и разбор страницы.
+        import estimate
+        import project
+        with redirect_stdout(io.StringIO()):
+            estimate.main(["--sources", "3", "--searches", "1", "--save"])
+            project.main(["approve-plan", "--note", "тест"])
+
     def fetch(self, *argv, allow_private=False):
         old = fetch_source.ALLOW_PRIVATE
         fetch_source.ALLOW_PRIVATE = allow_private

@@ -5,10 +5,14 @@
   1. есть источник (sources) — иначе понижение до гипотезы («прежний ответ агента не факт»);
   2. источник — сохранённый снимок M-xx в materials/ — иначе понижение;
   3. снимок не синтетический (kind: synthetic) и само утверждение не synthetic — иначе понижение;
-  4. у источника есть дословная цитата (регистр, ё/е, пробелы и кавычки не важны), и она есть в снимке;
-     снимок не пустой (≥100 символов) — иначе понижение;
+  4. у источника есть дословная цитата (регистр, ё/е, пробелы и кавычки не важны) не короче 4 слов и 20 знаков,
+     и она есть в снимке; снимок не пустой (≥100 символов) — иначе понижение;
   5. числа (с учётом «тыс./млн/млрд», % и форматов дат) и имена собственные (целым словом, основа ≥4 букв)
      есть в предложении цитаты или в атрибуции снимка (title, publisher, published) — иначе понижение;
+     проценты и квантификаторы («гарантированно», «полный», «все», «всегда», «любой», «каждый», «никогда»,
+     «без исключений», «100%») должны стоять в самой цитате, а не где-то в снимке;
+  8. хотя бы один источник факта — не форум, блог, отзывы, соцсети (ugc) и не реклама продавца (advertising):
+     тип источника пишет fetch_source.py в materials/MANIFEST.json (агент его не меняет) — иначе понижение;
   6. «проверено человеком» — только если в state/human.jsonl есть запись РП с хэшем текущего текста
      (команду claims.py human-verified агент сам выполнить не может: Claude Code спрашивает РП);
      пометка verified в claims.jsonl без такой записи игнорируется.
@@ -43,6 +47,19 @@ RU_KIND = {"факт": "fact", "гипотеза": "hypothesis", "прогноз
 
 
 MIN_SNAPSHOT_CHARS = 100  # меньше — капча, JS-страница или пустой файл: не основание факта
+MIN_QUOTE_WORDS, MIN_QUOTE_CHARS = 4, 20  # цитата из одного слова делает правило «дословная цитата» пустым
+QUANTIFIERS = [
+    (r"гарантир\w*", "«гарантированно»"),
+    (r"\bполн(ая|ой|ую|ое|ый|ого|ым|ом|ые|ых|ыми|остью)\b", "«полный / полностью»"),
+    (r"\bвс(е|ё|ех|ем|еми|я|ю|его)\b", "«все»"),
+    (r"\bвсегда\b|\bнавсегда\b", "«всегда»"),
+    (r"\bлюб(ой|ого|ая|ую|ое|ые|ых|ым|ом|ому)\b", "«любой»"),
+    (r"\bкажд\w+", "«каждый»"),
+    (r"\bникогда\b|\bни\s+од\w+", "«никогда / ни один»"),
+    (r"\bабсолютн\w*|\bбез\s+исключени\w*|\b100\s*%|\bстопроцентн\w*", "«абсолютно / без исключений / 100%»"),
+]
+_QUANT = [(re.compile(p, re.I), label) for p, label in QUANTIFIERS]
+PCT_RE = re.compile(r"\d+(?:[.,]\d+)?\s*(?:%|процент\w*)", re.I)
 SENT_BOUND = re.compile(r"(?<=[.!?…])\s+(?=[«\"„(\-—–]?\s*[A-ZА-ЯЁ0-9])|\n")
 
 
@@ -75,6 +92,21 @@ def quote_sentences(body: str, quote: str) -> str | None:
     return body[a: e.start() if e else len(body)]
 
 
+def quote_too_short(quote: str) -> bool:
+    return len(re.findall(r"\w+", quote)) < MIN_QUOTE_WORDS or len(quote.strip()) < MIN_QUOTE_CHARS
+
+
+def missing_in_quotes(text: str, quotes: str) -> list[str]:
+    """Проценты и квантификаторы утверждения, которых нет в самих цитатах (не в предложении и не в снимке)."""
+    text = ID_RE.sub(" ", core.norm_text(text).replace("ё", "е"))
+    q = core.norm_text(quotes).replace("ё", "е")
+    miss = [label for rx, label in _QUANT if rx.search(text) and not rx.search(q)]
+    for m in PCT_RE.finditer(text):
+        if not core.same_quantity(m.group(0), q) and not any(core.same_quantity(m.group(0), x.group(0)) for x in PCT_RE.finditer(q)):
+            miss.append(m.group(0))
+    return miss
+
+
 def missing_in_evidence(text: str, evidence: str, full: str) -> list[str]:
     """Числа, даты и имена собственные утверждения, которых нет в основании.
 
@@ -99,6 +131,8 @@ def check(proj: Path) -> dict:
         rep["errors"].append(str(e))
         return rep
     mats = core.list_materials(proj)
+    manifest = core.read_json(proj / "materials" / core.MANIFEST, {}) or {}
+    rep["weak_hypotheses"] = []
     human_ok = core.human_verified_ids(proj, claims)
     for mid, files in core.duplicate_material_ids(proj).items():
         rep["errors"].append(f"{mid}: id снимка повторяется в файлах {', '.join(files)} — непонятно, какой из них основание")
@@ -133,6 +167,9 @@ def check(proj: Path) -> dict:
                 rep["downgrade"].append((cid, "synthetic", "синтетический ответ не может быть фактом"))
             continue
         if kind != "fact":
+            mids = [s.get("material") for s in c.get("sources") or [] if s.get("material") in mats]
+            if kind == "hypothesis" and mids and all(core.material_source_type(proj, m, mats[m], manifest) in core.WEAK_SOURCE_TYPES for m in mids):
+                rep["weak_hypotheses"].append((cid, mids))
             if kind == "forecast" and not (c.get("basis") or c.get("sources")):
                 rep["warnings"].append(f"{cid}: прогноз без оснований (basis: [C-...] или sources)")
             continue
@@ -149,7 +186,7 @@ def check(proj: Path) -> dict:
             reason = "прежний вывод агента без источника" if c.get("origin") == "agent" else "нет источника"
             rep["downgrade"].append((cid, "no_source", reason))
             continue
-        snaps, fulls = [], []
+        snaps, fulls, quotes, types = [], [], [], []
         bad = None
         for s in sources:
             mid = s.get("material")
@@ -179,18 +216,33 @@ def check(proj: Path) -> dict:
             if not quote:
                 bad = ("no_quote", f"у источника {mid} нет цитаты — факт нечем проверить")
                 continue
+            if quote_too_short(quote):
+                bad = ("short_quote", f"цитата из {mid} слишком короткая («{quote[:40]}»): нужно не меньше "
+                                      f"{MIN_QUOTE_WORDS} слов и {MIN_QUOTE_CHARS} знаков, на которых держится утверждение")
+                continue
             sent = quote_sentences(body, quote)
             if sent is None:
                 bad = ("quote_not_found", f"цитаты нет в {mid}: «{quote[:60]}»")
                 continue
             snaps.append(sent + " " + attribution)
             fulls.append(body + " " + attribution)
+            quotes.append(quote)
+            types.append((mid, core.material_source_type(proj, mid, mat, manifest)))
         if not snaps:
             rep["downgrade"].append((cid, *(bad or ("no_snapshot", "нет пригодного снимка"))))
             continue
+        if all(t in core.WEAK_SOURCE_TYPES for _, t in types):
+            rep["downgrade"].append((cid, "weak_source", "все источники — форум, блог, отзывы или реклама ("
+                                     + ", ".join(f"{m}: {t}" for m, t in types)
+                                     + "): для факта нужен первичный источник, исследование или СМИ"))
+            continue
         miss = missing_in_evidence(c.get("text", ""), "\n".join(snaps), "\n".join(fulls))
+        qmiss = missing_in_quotes(c.get("text", ""), "\n".join(quotes))
         if miss:
             rep["downgrade"].append((cid, "not_in_snapshot", "нет в предложении цитаты: " + ", ".join(miss)))
+        elif qmiss:
+            rep["downgrade"].append((cid, "not_in_quote", "в самой цитате нет: " + ", ".join(qmiss)
+                                     + " — квантификаторы и проценты должны стоять в цитате"))
         else:
             rep["ok"].append(cid)
 
@@ -257,6 +309,9 @@ def render(rep: dict, fixed: bool) -> str:
         lines.append(f"  ✗ {e}")
     for w in rep["warnings"]:
         lines.append(f"  ! {w}")
+    for cid, mids in rep.get("weak_hypotheses", []):
+        lines.append(f"  · {cid} остаётся гипотезой: все источники — форум, блог, отзывы или реклама ({', '.join(mids)}); "
+                     "фактом станет только с первичным источником или СМИ")
     if not rep["downgrade"] and not rep["errors"]:
         lines.append("  ✓ все факты подтверждены снимками, метки в документах согласованы")
     return "\n".join(lines)
