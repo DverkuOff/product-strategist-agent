@@ -176,7 +176,7 @@
 - В МегаФоне есть агрегатор нейросетей в Telegram-боте: можно уточнить, есть ли у МегаФона доступные модели или API (tech-scout).
 
 ## Источники
-- Бриф кейса: `tracks/3-agent/brief/case-3-megafon-product-strategist.md`, 2026.
+- Бриф кейса: оригинал организаторов в репозиторий не входит (`brief/` в .gitignore), выжимка — `docs/00-brief.md`, 2026.
 - Рудских Д., интервью «Ведомостям», corp.megafon.ru: https://corp.megafon.ru/press/interview/20251224-1857.html (2025).
 - ComNews, «МегаФон подвёл финансовые итоги 2025 г.»: https://www.comnews.ru/content/244126/2026-03-06/2026-w10/1010/megafon-podvel-finansovye-itogi-2025-g (2026).
 - Mobile-review, итоги 1-го полугодия 2026: https://mobile-review.com/all/?p=253281 (2026, по сниппету).
