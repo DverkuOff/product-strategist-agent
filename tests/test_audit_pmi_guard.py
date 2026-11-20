@@ -135,6 +135,7 @@ class PmiGuardBypasses(Base):
         self.assertEqual(self.guard("Bash", {"command": "python3 scripts/project.py approve-plan --note 'начать'"}), "ask")
 
     def test_normal_work_not_blocked(self):
+        (self.proj / "out" / "calc-retention.py").write_text("print(round(1250 * 0.04, 1))\n", encoding="utf-8")
         self.assert_all("allow", STILL_ALLOWED)
         for rel in ("out/brief.md", "state/claims.jsonl", "state/decisions.md", "state/product-properties.json"):
             self.assertEqual(self.guard("Write", {"file_path": str(self.proj / rel), "content": "x"}), "allow", rel)

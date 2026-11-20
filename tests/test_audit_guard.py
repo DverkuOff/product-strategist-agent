@@ -42,7 +42,7 @@ ALLOWED_BASH = [  # ложные срабатывания из отчёта (М1
     "python3 scripts/claims.py add <<'EOF'\n{\"text\": \"запиши в AGENTS.md > x\", \"kind\": \"hypothesis\"}\nEOF",
     "python3 -m unittest discover -s tests",
     "ls projects/demo/materials/", "cat AGENTS.md", "git status", "git log --oneline -3",
-    "mkdir -p projects/demo/out/calc && python3 projects/demo/out/calc/retention.py > projects/demo/out/calc/result.md",
+    "python3 projects/demo/out/calc-retention.py > projects/demo/out/calc-result.md",  # файл расчёта создаёт тест
     "python3 -c \"print(sum([1, 2, 3]) / 3)\"",
     "python3 scripts/project.py log \"$(date) готово\"",
     "cp /tmp/x projects/demo/out/x.md",
@@ -74,6 +74,7 @@ class GuardAttacks(TempRepoCase):
         self.assertEqual(self.guard("Bash", {"command": "rm tmp.md"}, cwd=str(self.proj / "out")), "allow")
 
     def test_no_false_positives(self):
+        (self.proj / "out" / "calc-retention.py").write_text("import math\nprint(math.ceil(12.5 * 0.04))\n", encoding="utf-8")
         for cmd in ALLOWED_BASH:
             self.assertEqual(self.guard("Bash", {"command": cmd}), "allow", cmd)
 
