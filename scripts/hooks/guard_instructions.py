@@ -268,12 +268,23 @@ def at_root(cwd: Path, r: Path) -> bool:
     return norm_rel(str(cwd), r, cwd) in ("", ".")
 
 
+def _glob(pat: str, root_dir: str | None = None) -> list[str]:
+    try:
+        return glob.glob(pat, root_dir=root_dir, include_hidden=True)  # Python 3.11+: «*» совпадает и с .env
+    except TypeError:  # Python 3.10: скрытые файлы — отдельным шаблоном «.*» на месте каждого «*» в начале имени
+        hits = set(glob.glob(pat, root_dir=root_dir))
+        hidden = re.sub(r"(^|/)\*", r"\1.*", pat)
+        if hidden != pat:
+            hits |= set(glob.glob(hidden, root_dir=root_dir))
+        return sorted(hits)
+
+
 def expand_glob(pattern: str, cwd: Path) -> list[str]:
     try:
         pat = os.path.expanduser(pattern)
         if os.path.isabs(pat):
-            return glob.glob(pat, include_hidden=True)[:300]
-        return [str(cwd / x) for x in glob.glob(pat, root_dir=str(cwd), include_hidden=True)[:300]]
+            return _glob(pat)[:300]
+        return [str(cwd / x) for x in _glob(pat, root_dir=str(cwd))[:300]]
     except (OSError, ValueError, TypeError):
         return []
 
