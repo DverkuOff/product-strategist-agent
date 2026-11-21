@@ -101,8 +101,6 @@ class VerifyClaims(TempRepoCase):
         self.assertEqual(verify_claims.main(["--project", str(self.proj), "--fix"]), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ImmutableSnapshots(TempRepoCase):
@@ -140,3 +138,19 @@ class ImmutableSnapshots(TempRepoCase):
         data = core.read_json(self.proj / "materials" / core.MANIFEST, {})
         self.assertIn("M-12", data)
         self.assertEqual(core.manifest_check(self.proj), ({}, []))
+
+
+class QuoteInTable(unittest.TestCase):
+    """Цифра из ячейки таблицы: агент цитирует «показатель число» без разделителей колонок."""
+
+    BODY = "| Показатель | Значение |\n|---|---|\n| Абоненты с детскими SIM | 1 200 тыс. |\n"
+
+    def test_quote_across_cells_is_found(self):
+        self.assertTrue(verify_claims.quote_regex("Абоненты с детскими SIM 1 200 тыс.").search(self.BODY))
+
+    def test_wrong_number_in_table_is_not_found(self):
+        self.assertIsNone(verify_claims.quote_regex("Абоненты с детскими SIM 2 200 тыс.").search(self.BODY))
+
+
+if __name__ == "__main__":
+    unittest.main()
