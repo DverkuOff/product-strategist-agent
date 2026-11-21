@@ -1,0 +1,25 @@
+{
+  "created_at": "2026-11-21T11:10:38+03:00",
+  "estimate": {
+    "sources": 8,
+    "searches": 8,
+    "snapshot_tokens": 10415,
+    "parts_usd": {
+      "оркестратор (Sonnet)": 0.3877,
+      "чтение источников (Haiku)": 0.0091,
+      "веб-поиск": 0.0437
+    },
+    "usd": 0.4406,
+    "usd_low": 0.2643,
+    "usd_high": 0.793,
+    "minutes": 16.0,
+    "calibration": {
+      "factor": 0.55,
+      "from_tasks": 1
+    }
+  },
+  "approved": true,
+  "approved_at": "2026-11-21T11:11:14+03:00",
+  "note": "Вопросы и список источников — в out/research-plan.md",
+  "approved_note": "РП: начать; добавить три синтетических интервью для гипотез Q3"
+}
