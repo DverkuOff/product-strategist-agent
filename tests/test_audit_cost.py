@@ -73,3 +73,26 @@ class CostAudit(TempRepoCase):
         with redirect_stdout(io.StringIO()) as out:
             cost_report.main(["--project", str(self.proj)])
         self.assertIn("цена неизвестна", out.getvalue())
+
+
+class WebSearchCount(TempRepoCase):
+    """WebSearch в Claude Code — клиентский инструмент: поиск виден только как tool_use в стенограмме."""
+
+    def test_websearch_tool_use_counted_once_per_call(self):
+        sys.path.insert(0, str(SCRIPTS / "hooks"))
+        import cost_ledger
+        u = {"input_tokens": 10, "output_tokens": 5}
+        lines = [  # один ответ (один message.id) разбит на две строки, в каждой свой вызов WebSearch
+            {"type": "assistant", "message": {"id": "m1", "model": "claude-sonnet-5-5", "usage": u,
+                                              "content": [{"type": "tool_use", "name": "WebSearch"}]}},
+            {"type": "assistant", "message": {"id": "m1", "model": "claude-sonnet-5-5", "usage": u,
+                                              "content": [{"type": "tool_use", "name": "WebSearch"}]}},
+            {"type": "assistant", "message": {"id": "m2", "model": "claude-sonnet-5-5", "usage": dict(u, server_tool_use={"web_search_requests": 1}),
+                                              "content": [{"type": "tool_use", "name": "WebSearch"}]}},
+        ]
+        t = self.tmp / "t.jsonl"
+        t.write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+        msgs = cost_ledger.messages_from_transcript(t, main_only=True)
+        ws = [m["usage"]["server_tool_use"]["web_search_requests"] for m in msgs]
+        self.assertEqual(ws, [2, 1])  # без двойного счёта, если сервер уже сообщил поиск
+        self.assertGreater(core.usage_cost("claude-sonnet-5-5", msgs[0]["usage"]), core.usage_cost("claude-sonnet-5-5", u))

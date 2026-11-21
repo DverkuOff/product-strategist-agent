@@ -87,11 +87,61 @@ def quote_sentences(body: str, quote: str) -> str | None:
     rx = quote_regex(quote)
     m = rx.search(body) if rx else None
     if not m:
-        return None
+        return quote_in_table_cell(body, quote)
     starts = [b.end() for b in SENT_BOUND.finditer(body) if b.end() <= m.start()]  # endpos ломает lookahead
     a = starts[-1] if starts else 0
     e = SENT_BOUND.search(body, m.end())
     return body[a: e.start() if e else len(body)]
+
+
+CELL_GAP = re.compile(r"\S+(?: \S+)*")  # фрагмент ячейки: слова через один пробел; столбцы разделены 2+ пробелами
+_W = re.compile(r"[\w%.,-]+")
+
+
+def _words(s: str) -> list[str]:
+    return [w.strip(".,") for w in _W.findall(core.norm_text(s)) if w.strip(".,")]
+
+
+def quote_in_table_cell(body: str, quote: str) -> str | None:
+    """Цитата из ячейки таблицы в тексте pdftotext -layout: строки ячейки идут через строку-другую и
+    перемежаются соседними столбцами. Ищем цитату как продолжение фрагментов одного столбца: следующий
+    фрагмент — на одной из 3 следующих строк, начинается в той же колонке (±3 знака) и продолжает цитату
+    с первого слова. Возвращаем склеенный текст ячейки или None."""
+    q = _words(quote)
+    if len(q) < MIN_QUOTE_WORDS:
+        return None
+    lines = body.split("\n")
+    frags = [[(m.start(), _words(m.group()), m.group()) for m in CELL_GAP.finditer(l)] for l in lines]
+
+    def cont(li: int, col: int, k: int, acc: list[str]) -> str | None:
+        for lj in range(li + 1, min(li + 4, len(lines))):
+            for c, ws, raw in frags[lj]:
+                if abs(c - col) > 3:
+                    continue
+                n = 0  # фрагмент может захватить соседний столбец (между ними один пробел): берём общий префикс
+                while n < len(ws) and k + n < len(q) and ws[n] == q[k + n]:
+                    n += 1
+                if n == 0:
+                    continue
+                if k + n == len(q):
+                    return " ".join(acc + [raw])
+                r = cont(lj, col, k + n, acc + [raw])
+                if r:
+                    return r
+        return None
+
+    for li, row in enumerate(frags):
+        for c, ws, raw in row:
+            if not ws or ws[0] != q[0]:  # ячейка начинается с начала фрагмента; середина строки — дело регулярки
+                continue
+            n = 0
+            while n < len(ws) and n < len(q) and ws[n] == q[n]:
+                n += 1
+            if 0 < n < len(q):
+                r = cont(li, c, n, [raw])
+                if r:
+                    return r
+    return None
 
 
 def quote_too_short(quote: str) -> bool:
