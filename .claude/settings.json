@@ -8,6 +8,15 @@
   },
   "permissions": {
     "allow": [
+      "Skill(intake)",
+      "Skill(research)",
+      "Skill(options)",
+      "Skill(strategy)",
+      "Skill(validation)",
+      "Skill(revise)",
+      "Skill(compare)",
+      "Skill(synthetic-interview)",
+      "Skill(revisit)",
       "WebSearch",
       "WebFetch",
       "Edit(projects/**)",
