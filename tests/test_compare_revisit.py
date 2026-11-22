@@ -17,6 +17,17 @@ class Compare(TempRepoCase):
     def test_negation_not_counted(self):
         self.assertEqual(compare.risky("Избегать обещаний «100% защиты»."), [])
         self.assertTrue(compare.risky("Ева даёт 100% защиту."))
+        # значение параметра в расчёте — не обещание; обещание «100%» по-прежнему считается
+        self.assertEqual(compare.risky("| k=25 % | k=100 % |\nпри 100 % приписывании прибавка 3 млн"), [])
+        self.assertTrue(compare.risky("Скидка до 100% всем семьям."))
+        # признаки в другой формулировке: варианты строками таблицы, «без изменений», «остановить»
+        text = ("| **A. Семьи** | x |\n| **B. Владельцы** | y |\n| **D. Роутер** | z |\n"
+                "Путь без изменений. Неизвестные исходы. Стоп-сигнал. **Остановить** пилот.")
+        checks = compare.analyze(text, set())["checks"]
+        for name in ("≥3 вариантов решения", "вариант «оставить как есть»", "раздел «чего не знаем»",
+                     "план: нежелательные последствия", "план: kill-критерий"):
+            self.assertTrue(checks[name], name)
+        self.assertFalse(compare.analyze("**A или B.** выбираем A", set())["checks"]["≥3 вариантов решения"])
 
     def test_risky_in_refusal_section_not_counted(self):
         self.assertEqual(compare.risky("## Чего не говорим\n- Самый надёжный\n"), [])

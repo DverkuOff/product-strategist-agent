@@ -31,18 +31,22 @@ NEGATION = re.compile(r"(\bне\b|\bнельзя\b|избега\w*|\bбез\b|з
 LABEL = re.compile(r"\[(факт|гипотеза|прогноз|синтетика)|\b[CMPT]-\d+\b|MSG-\d+|https?://|гипотез\w*|прогноз\w*|оценк\w*|по данным|сообщает", re.I)
 LIST_NUM = re.compile(r"^\s*(#+\s*)?(\d+[.)]\s*)+")
 IDS = re.compile(r"\b(?:[CMPDT]|MSG)-\d+\b")
+# «k=100 %», «при 100 % приписывании» — значение параметра в расчёте, а не обещание
+PARAM_BEFORE = re.compile(r"(?:[=≤≥<>]|\bпри)\s*$", re.I)
+# варианты в виде «## Вариант A», «**A. …**» или строк таблицы «| **B. …** |»
+OPTION_MARK = re.compile(r"^#+\s*вариант\s+(\S+)|^\s*(?:\|\s*)?\*\*(?:вариант\s+)?([A-DА-Г])[.)]\s", re.I | re.M)
 
 CHECKS = [
-    ("≥3 вариантов решения", lambda t: len(re.findall(r"^#+\s*вариант\s+\S", t, re.I | re.M)) >= 3),
-    ("вариант «оставить как есть»", lambda t: bool(re.search(r"оставить как есть|ничего не делать|статус-кво", t, re.I))),
+    ("≥3 вариантов решения", lambda t: len({(a or b).upper() for a, b in OPTION_MARK.findall(t)}) >= 3),
+    ("вариант «оставить как есть»", lambda t: bool(re.search(r"оставить как есть|ничего не делать|статус-кво|без изменений", t, re.I))),
     ("рассмотрено «закрыть направление»", lambda t: bool(re.search(r"закрыть направление|закрыть продукт|свернуть", t, re.I))),
     ("сильные возражения", lambda t: bool(re.search(r"возражени|провал\w*,? потому что|pre-mortem", t, re.I))),
-    ("раздел «чего не знаем»", lambda t: bool(re.search(r"чего (мы )?не знаем|пробел", t, re.I))),
+    ("раздел «чего не знаем»", lambda t: bool(re.search(r"чего (мы )?не знаем|пробел|неизвестн", t, re.I))),
     ("осознанные отказы", lambda t: bool(re.search(r"отказ\w*|не делаем|чего не говорим", t, re.I))),
     ("план: с чем сравниваем (контроль)", lambda t: bool(re.search(r"контрольн\w+ групп|holdout|с чем сравниваем", t, re.I))),
     ("план: срок наблюдения", lambda t: bool(re.search(r"\bсрок\b|\d+\s*недел|\d+\s*месяц", t, re.I))),
-    ("план: нежелательные последствия", lambda t: bool(re.search(r"нежелательн|guardrail", t, re.I))),
-    ("план: kill-критерий", lambda t: bool(re.search(r"kill|критери\w+ отмен|отменя\w+ решени", t, re.I))),
+    ("план: нежелательные последствия", lambda t: bool(re.search(r"нежелательн|guardrail|стоп-сигнал|стоп-правил", t, re.I))),
+    ("план: kill-критерий", lambda t: bool(re.search(r"kill|критери\w+ отмен|отменя\w+ решени|\bостановить\b", t, re.I))),
 ]
 
 
@@ -70,7 +74,7 @@ def risky(text: str) -> list[str]:
         clean = re.sub(r"«[^»]*»|\"[^\"]*\"", lambda m: " " * len(m.group(0)), line)  # цитаты клиентов и возражений
         for label, frag in promise_lint.risky_phrases(clean, affirmative_only=True, quantifiers=False):
             pos = promise_lint.normalize(clean).lower().find(frag.lower())
-            if pos >= 0 and NEGATION.search(clean[:pos]):
+            if pos >= 0 and (NEGATION.search(clean[:pos]) or ("100" in frag and PARAM_BEFORE.search(clean[:pos]))):
                 continue
             out.append(f"{label}: «{frag}» — {_context(line, frag)}")
     return out
