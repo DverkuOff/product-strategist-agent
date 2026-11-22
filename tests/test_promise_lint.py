@@ -97,3 +97,28 @@ class Parsing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReportPromises(TempRepoCase):
+    """E10: итог в формате РП (out/report.md) пересказывает предложение клиенту — те же правила, что у обещаний."""
+
+    def errs(self):
+        return [e for e in promise_lint.lint(self.proj)["errors"] if e.startswith("E10")]
+
+    def write(self, body):
+        (self.proj / "out" / "report.md").write_text(body, encoding="utf-8")
+
+    def test_risky_promise_in_offer_section_is_error(self):
+        self.write("# Итог\n\n## 2. Предложение и путь к клиенту\n\nЕва гарантированно защитит ваших близких.\n")
+        self.assertEqual(len(self.errs()), 1)
+
+    def test_analysis_sections_are_not_checked(self):
+        self.write("# Итог\n\n## 3. Прибыль\n\nНи один сценарий не доводит прибыль до цели, все три варианта слабее.\n")
+        self.assertEqual(self.errs(), [])
+
+    def test_fact_claim_with_same_wording_is_basis(self):
+        self.write("# Итог\n\n## 2. Предложение\n\nЕва блокирует большинство мошеннических звонков [факт C-002].\n"
+                   "Ева блокирует все мошеннические звонки [гипотеза C-002].\n")
+        e = self.errs()
+        self.assertEqual(len(e), 1)
+        self.assertIn("гипотеза C-002", e[0])

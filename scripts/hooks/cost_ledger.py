@@ -35,7 +35,7 @@ TRANSCRIPTS = ".cost-transcripts.json"
 
 def messages_from_transcript(path: Path, main_only: bool) -> list[dict]:
     """Ответы ассистента с usage, по одному на message.id."""
-    seen, out = set(), []
+    seen, out, idx = set(), [], {}
     try:
         fh = path.open(encoding="utf-8")
     except OSError:
@@ -51,11 +51,28 @@ def messages_from_transcript(path: Path, main_only: bool) -> list[dict]:
             m = d.get("message") or {}
             u, model = m.get("usage"), m.get("model") or ""
             mid = m.get("id") or d.get("requestId") or d.get("uuid")
+            # WebSearch в Claude Code — клиентский инструмент: в usage ответа поиск не виден, считаем вызовы
+            n_ws = sum(1 for b in (m.get("content") or []) if isinstance(b, dict)
+                       and b.get("type") == "tool_use" and b.get("name") == "WebSearch")
+            if n_ws and mid in idx:
+                _add_ws(idx[mid], n_ws)
             if not u or not model or model.startswith("<") or not mid or mid in seen:
                 continue
             seen.add(mid)
-            out.append({"id": mid, "model": model, "usage": u})
+            e = {"id": mid, "model": model, "usage": dict(u), "ws_tools": 0}
+            if n_ws:
+                _add_ws(e, n_ws)
+            out.append(e)
+            idx[mid] = e
     return out
+
+
+def _add_ws(e: dict, n: int) -> None:
+    """Число поисков ответа = max(серверный счётчик, вызовы WebSearch): без двойного счёта."""
+    e["ws_tools"] += n
+    stu = dict(e["usage"].get("server_tool_use") or {})
+    stu["web_search_requests"] = max(stu.get("web_search_requests", 0) or 0, e["ws_tools"])
+    e["usage"]["server_tool_use"] = stu
 
 
 @contextlib.contextmanager

@@ -227,13 +227,23 @@ def convert_local(path: Path) -> tuple[str, str, bytes]:
         return "", data.decode("utf-8", errors="replace"), data
     if suf in {".csv", ".tsv", ".json"}:
         return "", "```\n" + data.decode("utf-8", errors="replace").strip() + "\n```", data
+    if suf == ".pdf" and shutil.which("pdftotext"):  # -layout сохраняет столбцы таблиц, markitdown их перемешивает
+        try:
+            out = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", str(path), "-"], capture_output=True,
+                                 encoding="utf-8", errors="replace", timeout=180)
+            if out.returncode == 0 and out.stdout.strip():
+                return "", out.stdout, data
+        except (subprocess.TimeoutExpired, OSError):
+            pass  # запасной путь — markitdown
     tool = shutil.which("markitdown")
-    cmd = [tool, str(path)] if tool else (["uvx", "markitdown", str(path)] if shutil.which("uvx") else None)
+    cmd = [tool, str(path)] if tool else (["uvx", "--from", "markitdown[all]", "markitdown", str(path)] if shutil.which("uvx") else None)  # без [all] PDF не читается
     if not cmd:
-        raise SystemExit(f"Для {suf} нужен markitdown: `uvx markitdown` (uv) или `pip install 'markitdown[all]'`")
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        raise SystemExit(f"Для {suf} нужен pdftotext (poppler) или markitdown: `uvx --from 'markitdown[all]' markitdown` (uv) или `pip install 'markitdown[all]'`")
+    out = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=180)
     if out.returncode != 0:
         raise SystemExit(f"markitdown не смог прочитать {path.name}: {out.stderr.strip()[:300]}")
+    if not out.stdout.strip():
+        raise SystemExit(f"{path.name}: текста нет (скан без текстового слоя?) — пустой снимок не сохраняем")
     return "", out.stdout, data
 
 

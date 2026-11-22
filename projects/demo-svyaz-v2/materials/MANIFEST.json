@@ -1,0 +1,75 @@
+{
+  "M-01": {
+    "file": "M-01-brif-megafona-rp.md",
+    "sha256": "a27f448063a192a4fac081698c986a9bfe04b5eec5594c4302579284fb7c4add",
+    "saved_at": "2026-11-21T11:07:03+03:00",
+    "source_type": "rp"
+  },
+  "M-02": {
+    "file": "M-02-delovoi-peterburg-v-megasem-e-poavilis-r.md",
+    "sha256": "7f4278fd40a84576f7f444abe88c60a6431d0a0f305aabf36960e0f10277b227",
+    "saved_at": "2026-11-21T11:12:02+03:00",
+    "final_url": "https://www.dp.ru/a/2026/07/24/v-megaseme-pojavilis-roli",
+    "source_type": "media"
+  },
+  "M-03": {
+    "file": "M-03-comnews-bilain-50-gb-za-kajdyi-novyi-nom.md",
+    "sha256": "24a0ad98c5879672e7f1bc6ea7e4b0e71a9ab2d8e00263d13e16b5b07a1e872d",
+    "saved_at": "2026-11-21T11:12:03+03:00",
+    "final_url": "https://www.comnews.ru/content/237576/2025-02-05/2025-w06/1010/obedinyayte-blizkikh-bilayne-i-poluchayte-50-gb-za-kazhdyy-novyy-nomer-ezhemesyachno",
+    "source_type": "media"
+  },
+  "M-04": {
+    "file": "M-04-comnews-bilain-obnovil-lineiku-tarifov-d.md",
+    "sha256": "08801764aecfec47a793576aa3b8a890079097c3bc0f27e2dda646970d3d6ceb",
+    "saved_at": "2026-11-21T11:12:05+03:00",
+    "final_url": "https://www.comnews.ru/content/240607/2025-08-08/2025-w32/1010/bilayn-obnovil-lineyku-tarifov-dlya-data-ustroystv-bolshe-gibkosti-i-vygody",
+    "source_type": "media"
+  },
+  "M-05": {
+    "file": "M-05-comnews-operatory-svazi-zarabotali-1-6-t.md",
+    "sha256": "d6eed93ae4b3ec2d4e666690d045b57970195723da9d2098154a41d5b3de82dd",
+    "saved_at": "2026-11-21T11:12:05+03:00",
+    "final_url": "https://www.comnews.ru/content/246551/2026-07-24/2026-w30/1008/operatory-svyazi-zarabotali-16-trln-rub-svyazi",
+    "source_type": "media"
+  },
+  "M-06": {
+    "file": "M-06-152-fz-o-personal-nyh-dannyh-stat-a-9-so.md",
+    "sha256": "9bdc1f23e45668eee9fbbd8d1a878be512fddbec05c7d707c6745b6143d5766a",
+    "saved_at": "2026-11-21T11:12:06+03:00",
+    "final_url": "https://legalacts.ru/doc/152_FZ-o-personalnyh-dannyh/glava-2/statja-9/",
+    "source_type": "official"
+  },
+  "M-07": {
+    "file": "M-07-megafon-servis-megasem-a-opisanie-i-uslo.md",
+    "sha256": "dd996ac6a95275d0bc0572fac02db3f35d098515d10d9efa5961e7ca7a4b98f4",
+    "saved_at": "2026-11-21T11:12:27+03:00",
+    "final_url": "https://moscow.megafon.ru/services/family/megasemiya/",
+    "source_type": "official"
+  },
+  "M-08": {
+    "file": "M-08-126-fz-o-svazi-stat-a-53-svedenia-ob-abo.md",
+    "sha256": "8f0c643a3fd2e2eb6a992afee99af5ae28a3120cd10eeac8a59563f47468bcd5",
+    "saved_at": "2026-11-21T11:12:28+03:00",
+    "final_url": "https://www.zakonrf.info/zosvyazi/53/",
+    "source_type": "official"
+  },
+  "M-09": {
+    "file": "M-09-sinteticeskoe-interv-u-organizator-semei.md",
+    "sha256": "0785f81d3f9ff4d15dd0b0a8e4690e5f46238ff7074d6b4b055603e2406251b1",
+    "saved_at": "2026-11-21T11:13:15+03:00",
+    "source_type": "synthetic"
+  },
+  "M-10": {
+    "file": "M-10-sinteticeskoe-interv-u-pojiloi-ucastnik.md",
+    "sha256": "a8d6058e359ea1a2713286aef953e74d5cce5d305157121bf35c3042068fbb7f",
+    "saved_at": "2026-11-21T11:13:15+03:00",
+    "source_type": "synthetic"
+  },
+  "M-11": {
+    "file": "M-11-sinteticeskoe-interv-u-vladelec-telefona.md",
+    "sha256": "ac7901aa8ec38f9e09d262120795fd5de231dc9b556356b2467b3f789e233d8e",
+    "saved_at": "2026-11-21T11:13:16+03:00",
+    "source_type": "synthetic"
+  }
+}

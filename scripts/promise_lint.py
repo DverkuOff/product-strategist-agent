@@ -18,7 +18,8 @@
   E6 в обещании есть число, которого нет в опорных свойствах;
   E7 у обещания и опорного свойства меньше двух общих значимых слов (ссылка на «чужое» свойство);
   E8 рискованная формулировка в слогане, ключевом сообщении, позиционировании или заголовках (не только в таблице);
-  E9 рискованная формулировка в другой таблице документа («Роль каналов» → «Что говорим») без свойства-факта в строке.
+  E9 рискованная формулировка в другой таблице документа («Роль каналов» → «Что говорим») без свойства-факта в строке;
+  E10 то же в итоговых out/report.md и out/summary.md, в разделах обещаний, сообщения и коммуникаций.
 Сравнение с конкурентами («в отличие от аналогов» в позиционировании по Муру) — не риск само по себе: ловится вместе
 со сравнительной или превосходной формой («надёжнее, чем у конкурентов»), а в таблице обещаний — без свойства-факта,
 которое говорит о сравнении. Отрицание («не гарантирует блокировку всех звонков») и устойчивые обороты («тем самым»,
@@ -102,7 +103,9 @@ SUPPORT_COL = re.compile(r"опор|свойств", re.I)
 TYPE_COL = re.compile(r"^\s*(тип|статус)\s*$", re.I)
 ID_COL = re.compile(r"^\s*id\s*$", re.I)
 PROP_ID = re.compile(r"\bP-\d+\b")
+CLAIM_FACT = re.compile(r"\[факт\s+(C-\d+)\]")
 KEY_SECTIONS = re.compile(r"слоган|ключев\w*\s+сообщени|позиционн|подтвержд|заголов|креатив|тексты?\s+для", re.I)
+REPORT_PROMISE = re.compile(r"обещани|сообщени|коммуникац|предложени|глазами", re.I)
 SKIP_SECTIONS = re.compile(r"отказ|не\s+говорим|запрещ|риск|возражени|чего\s+не", re.I)
 
 
@@ -307,6 +310,34 @@ def lint(proj: Path) -> dict:
                 rep["errors"].append(f"E8 слоган / ключевое сообщение: {msg} — главное сообщение подчиняется тем же правилам, что и обещания")
             else:
                 rep["warnings"].append(f"вне таблицы обещаний: {msg}")
+    # итоговые документы для получателя (report.md в формате РП, summary.md): обещания и ключевое сообщение
+    # там пересказаны — риск в разделе обещаний / сообщения без свойства-факта в строке — E10, в остальном предупреждение
+    try:  # факт из реестра, на который ссылается строка итога, тоже опора («в любой момент» — слова брифа)
+        fact_claims = {c["id"]: c.get("text", "") for c in core.read_jsonl(proj / "state" / "claims.jsonl")
+                       if c.get("kind") == "fact" and c.get("status", "active") == "active" and "id" in c}
+    except ValueError:
+        fact_claims = {}
+    for name in ("report.md", "summary.md"):
+        doc = proj / "out" / name
+        if not doc.exists():
+            continue
+        section = ""
+        for line in doc.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#"):
+                section = line
+                continue
+            if SKIP_SECTIONS.search(section) or not (KEY_SECTIONS.search(section) or REPORT_PROMISE.search(section)) \
+                    or any(t in line for t in table_texts):
+                continue  # аналитика итога («все три оператора», «ни один сценарий») — не обещание клиенту
+            refs = [props[x] for x in PROP_ID.findall(line) if x in props and props[x]["effective_status"] == "fact"]
+            basis = [p.get("statement", "") for p in refs] + [fact_claims[x] for x in CLAIM_FACT.findall(line) if x in fact_claims]
+            ok = {lb for lb, _ in risky_phrases(" ".join(basis), affirmative_only=True)}
+            for label, frag in risky_phrases(re.sub(r"~~.*?~~", "", line), affirmative_only=True):
+                if label in ok:
+                    continue
+                msg = f"{label} («{frag}») в строке «{line.strip()[:80]}» раздела «{section.lstrip('# ').strip()}»"
+                rep["errors"].append(f"E10 {name}: {msg} без свойства-факта или факта [факт C-…] с той же формулировкой — "
+                                     "итог говорит клиенту то же, что обещания")
     n_bad = sum(1 for p in rep["promises"] if not p["ok"])
     rep["stats"] = {
         "promises": len(rep["promises"]),
