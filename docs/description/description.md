@@ -2,6 +2,7 @@
 <p class="kicker">MGIMO×AI CHALLENGE · кейс 3 «Фабрика Продуктов МегаФона» · номинация «ИИ-проект»</p>
 <h1 class="title">Стратег Фабрики продуктов</h1>
 <p class="subtitle">Описание работы</p>
+<p class="meta"><b>Команда:</b> Евстратов Иван Михайлович (капитан), Комягин Роман Андреевич, Суслов Иван Романович</p>
 <p class="meta">ИИ-агент для руководителя цифрового продукта: папка с инструкциями, методикой и скриптами для Claude Code и Cursor.<br>
 Репозиторий: <a href="https://github.com/DverkuOff/product-strategist-agent">github.com/DverkuOff/product-strategist-agent</a> · демо-проект по брифу МегаФона: <code>projects/demo-svyaz-v2/</code></p>
 
