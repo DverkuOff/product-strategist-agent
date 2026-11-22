@@ -34,10 +34,11 @@ IDS = re.compile(r"\b(?:[CMPDT]|MSG)-\d+\b")
 # «k=100 %», «при 100 % приписывании» — значение параметра в расчёте, а не обещание
 PARAM_BEFORE = re.compile(r"(?:[=≤≥<>]|\bпри)\s*$", re.I)
 # варианты в виде «## Вариант A», «**A. …**» или строк таблицы «| **B. …** |»
-OPTION_MARK = re.compile(r"^#+\s*вариант\s+(\S+)|^\s*(?:\|\s*)?\*\*(?:вариант\s+)?([A-DА-Г])[.)]\s", re.I | re.M)
+OPTION_MARK = re.compile(r"^#+\s*(?i:вариант)\s+(\w+)|^\s*(?:[-*]\s+|\|\s*)?\*\*(?:(?i:вариант)\s+)?([A-DА-Г])[.)]\s", re.M)
+SAME_LETTER = str.maketrans("АВС", "ABC")  # кириллические двойники латинских букв вариантов
 
 CHECKS = [
-    ("≥3 вариантов решения", lambda t: len({(a or b).upper() for a, b in OPTION_MARK.findall(t)}) >= 3),
+    ("≥3 вариантов решения", lambda t: len({(a or b).upper().translate(SAME_LETTER) for a, b in OPTION_MARK.findall(t)}) >= 3),
     ("вариант «оставить как есть»", lambda t: bool(re.search(r"оставить как есть|ничего не делать|статус-кво|без изменений", t, re.I))),
     ("рассмотрено «закрыть направление»", lambda t: bool(re.search(r"закрыть направление|закрыть продукт|свернуть", t, re.I))),
     ("сильные возражения", lambda t: bool(re.search(r"возражени|провал\w*,? потому что|pre-mortem", t, re.I))),
@@ -73,8 +74,10 @@ def risky(text: str) -> list[str]:
             continue
         clean = re.sub(r"«[^»]*»|\"[^\"]*\"", lambda m: " " * len(m.group(0)), line)  # цитаты клиентов и возражений
         for label, frag in promise_lint.risky_phrases(clean, affirmative_only=True, quantifiers=False):
-            pos = promise_lint.normalize(clean).lower().find(frag.lower())
-            if pos >= 0 and (NEGATION.search(clean[:pos]) or ("100" in frag and PARAM_BEFORE.search(clean[:pos]))):
+            norm = promise_lint.normalize(clean).lower()
+            spots = [m.start() for m in re.finditer(re.escape(frag.lower()), norm)]
+            # считаем, если хоть одно вхождение не под отрицанием и не значение параметра («при 100 % … 100 % защита»)
+            if spots and all(NEGATION.search(clean[:p]) or ("100" in frag and PARAM_BEFORE.search(clean[:p])) for p in spots):
                 continue
             out.append(f"{label}: «{frag}» — {_context(line, frag)}")
     return out

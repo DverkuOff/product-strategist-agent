@@ -27,7 +27,13 @@ class Compare(TempRepoCase):
         for name in ("≥3 вариантов решения", "вариант «оставить как есть»", "раздел «чего не знаем»",
                      "план: нежелательные последствия", "план: kill-критерий"):
             self.assertTrue(checks[name], name)
-        self.assertFalse(compare.analyze("**A или B.** выбираем A", set())["checks"]["≥3 вариантов решения"])
+        three = lambda s: compare.analyze(s, set())["checks"]["≥3 вариантов решения"]
+        self.assertFalse(three("**A или B.** выбираем A"))
+        self.assertFalse(three("## Вариант A: Семьи\n| **A. Семьи** | x |\n| **B. Влад** |"))  # один вариант дважды
+        self.assertFalse(three("**A. x**\n**А. y**\n**B. z**"))  # латинская и кириллическая А
+        self.assertFalse(three("**a) ну**\n**b) ну**\n**c) ну**"))  # пункты списка, не варианты
+        self.assertTrue(three("- **A. x**\n- **B. y**\n- **C. z**"))
+        self.assertTrue(compare.risky("Ева работает при 100% нагрузке и даёт 100% защиту"))
 
     def test_risky_in_refusal_section_not_counted(self):
         self.assertEqual(compare.risky("## Чего не говорим\n- Самый надёжный\n"), [])
