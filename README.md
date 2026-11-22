@@ -336,4 +336,4 @@ python3 scripts/cost_report.py   # по этапам, моделям и аген
 
 </details>
 
-[video]: pitch/overview.mp4
+[video]: https://orientir.rapira-cloud.ru/video/strategist-overview.mp4
